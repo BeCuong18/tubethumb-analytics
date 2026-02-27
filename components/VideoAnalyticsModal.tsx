@@ -27,10 +27,10 @@ const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClos
     try {
       const email = auth.currentUser?.email;
       if (email) {
-        // Giới hạn 10 lượt sử dụng mỗi ngày cho phiên bản hiện tại
-        const isAllowed = await checkUsageLimit(email, 10);
+        // Giới hạn 15 lượt sử dụng mỗi ngày cho phiên bản hiện tại
+        const isAllowed = await checkUsageLimit(email, 15);
         if (!isAllowed) {
-          setErrorMsg("Hệ thống: Bạn đã đạt giới hạn 10 lượt phân tích chuyên sâu AI hôm nay. Vui lòng quay lại vào ngày mai!");
+          setErrorMsg("Hệ thống: Bạn đã đạt giới hạn 15 lượt phân tích chuyên sâu AI hôm nay. Vui lòng quay lại vào ngày mai!");
           setLoading(false);
           return;
         }

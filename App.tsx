@@ -45,7 +45,7 @@ const App: React.FC = () => {
 
   const fetchUsageInfo = async () => {
     if (auth.currentUser?.email) {
-      const info = await getUsageInfo(auth.currentUser.email, 10);
+      const info = await getUsageInfo(auth.currentUser.email, 15);
       setUsageInfo(info);
     }
   };
