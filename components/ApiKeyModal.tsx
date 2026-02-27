@@ -2,31 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { saveYoutubeApiKey, getYoutubeApiKey, removeYoutubeApiKey, saveGeminiApiKey, getGeminiApiKey, removeGeminiApiKey } from '../services/storageService';
 
 interface ApiKeyModalProps {
-    isOpen: boolean;
     onClose: () => void;
-    onSave: (ytKey: string, geminiKey: string) => void;
+    currentYtKey?: string;
+    currentGeminiKey?: string;
+    onSaveYtKey?: (key: string) => void;
+    onSaveGeminiKey?: (key: string) => void;
 }
 
-const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onSave }) => {
-    const [ytKey, setYtKey] = useState('');
-    const [geminiKey, setGeminiKey] = useState('');
+const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ onClose, currentYtKey, currentGeminiKey, onSaveYtKey, onSaveGeminiKey }) => {
+    const [ytKey, setYtKey] = useState(currentYtKey || '');
+    const [geminiKey, setGeminiKey] = useState(currentGeminiKey || '');
     const [isSaved, setIsSaved] = useState(false);
 
     useEffect(() => {
-        if (isOpen) {
-            const savedYt = getYoutubeApiKey();
-            const savedGemini = getGeminiApiKey();
-            if (savedYt) setYtKey(savedYt);
-            if (savedGemini) setGeminiKey(savedGemini);
-            if (savedYt || savedGemini) setIsSaved(true);
-        }
-    }, [isOpen]);
+        // Chỉ lấy key từ Firebase truyền qua props, không đọc từ local storage nữa
+        if (currentYtKey) setYtKey(currentYtKey);
+        if (currentGeminiKey) setGeminiKey(currentGeminiKey);
+        if (currentYtKey || currentGeminiKey) setIsSaved(true);
+    }, [currentYtKey, currentGeminiKey]);
 
     const handleSave = () => {
-        if (ytKey.trim()) saveYoutubeApiKey(ytKey);
-        if (geminiKey.trim()) saveGeminiApiKey(geminiKey);
+        if (ytKey.trim()) { saveYoutubeApiKey(ytKey); onSaveYtKey?.(ytKey); }
+        if (geminiKey.trim()) { saveGeminiApiKey(geminiKey); onSaveGeminiKey?.(geminiKey); }
         setIsSaved(true);
-        onSave(ytKey, geminiKey);
         onClose();
     };
 
@@ -36,10 +34,9 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onSave }) =>
         setYtKey('');
         setGeminiKey('');
         setIsSaved(false);
-        onSave('', '');
+        onSaveYtKey?.('');
+        onSaveGeminiKey?.('');
     };
-
-    if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
@@ -56,32 +53,24 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onSave }) =>
                 <h3 className="text-xl font-black text-white mb-6 uppercase tracking-tight">Quản lý API Key</h3>
 
                 <div className="space-y-4">
-                    {/* YouTube Data API Key Input */}
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
-                            YouTube Data API Key (v3)
-                        </label>
-                        <input
-                            type="password"
-                            value={ytKey}
-                            onChange={(e) => setYtKey(e.target.value)}
-                            placeholder="Nhập YouTube API Key..."
-                            className="w-full bg-[#0a0a0a] border border-[#333] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-red-600 transition-all font-mono"
-                        />
-                    </div>
+                    {/* YouTube Data API Key Input Removed as per user request */}
 
                     {/* Gemini API Key Input */}
                     <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">
-                            Gemini AI API Key
+                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex justify-between">
+                            <span>Gemini AI API Key</span>
+                            {isSaved && <span className="text-green-500 text-[9px] px-2 py-0.5 bg-green-500/10 rounded-full border border-green-500/20">Đã lưu</span>}
                         </label>
                         <div className="relative">
                             <input
                                 type="password"
                                 value={geminiKey}
-                                onChange={(e) => setGeminiKey(e.target.value)}
-                                placeholder="Nhập Gemini API Key..."
-                                className="w-full bg-[#0a0a0a] border border-[#333] rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-600 transition-all font-mono"
+                                onChange={(e) => {
+                                    setGeminiKey(e.target.value);
+                                    setIsSaved(false);
+                                }}
+                                placeholder="Nhập khóa API Gemini của bạn..."
+                                className="w-full bg-[#0a0a0a] border border-[#333] hover:border-[#666] focus:border-red-500 rounded-xl px-4 py-3 text-sm text-white focus:outline-none transition-all font-mono"
                             />
                             {isSaved && (
                                 <div className="absolute right-3 top-3 text-green-500">
@@ -91,8 +80,8 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ isOpen, onClose, onSave }) =>
                                 </div>
                             )}
                         </div>
-                        <p className="mt-2 text-[10px] text-gray-600">
-                            Khóa API được lưu cục bộ trên máy và không bao giờ được chia sẻ.
+                        <p className="mt-2 text-[10px] text-gray-500">
+                            Khóa này sẽ được lưu trữ an toàn ngay trên trình duyệt của bạn.
                         </p>
                     </div>
 

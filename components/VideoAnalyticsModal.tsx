@@ -394,7 +394,7 @@ const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClos
                                       onClick={() => handleGenerateImage(index)}
                                       className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all font-bold text-sm shadow-lg shadow-indigo-900/40"
                                     >
-                                      <span>🎨</span> Tạo ảnh mô phỏng bằng Gemini Imagen 3
+                                      <span>🎨</span> Tạo ảnh mô phỏng bằng Pollinations AI
                                     </button>
                                   )}
 
@@ -402,7 +402,7 @@ const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClos
                                   {loadingImages[index] && (
                                     <div className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600/50 text-indigo-200 rounded-xl font-bold text-sm border border-indigo-500/30 cursor-not-allowed">
                                       <div className="w-4 h-4 border-2 border-indigo-200 border-t-transparent rounded-full animate-spin"></div>
-                                      Đang khởi tạo hình ảnh qua Imagen 3...
+                                      Đang khởi tạo hình ảnh qua Pollinations AI...
                                     </div>
                                   )}
                                 </div>
@@ -413,7 +413,22 @@ const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClos
                                     {proposal.imageUrl && !imageError[index] ? (
                                       <div
                                         className="w-full h-full relative cursor-pointer"
-                                        onClick={() => window.open(proposal.imageUrl!, '_blank')}
+                                        onClick={() => {
+                                          setTimeout(() => {
+                                            const newWindow = window.open();
+                                            if (newWindow) {
+                                              newWindow.document.write(`
+                                                <html>
+                                                  <head><title>Original Image Preview - TubeThumb</title></head>
+                                                  <body style="margin:0; background:black; display:flex; justify-content:center; align-items:center; height:100vh;">
+                                                    <img src="${proposal.imageUrl}" style="max-width:100%; max-height:100%; object-fit:contain;" />
+                                                  </body>
+                                                </html>
+                                              `);
+                                              newWindow.document.close();
+                                            }
+                                          }, 0);
+                                        }}
                                       >
                                         <img
                                           src={proposal.imageUrl}

@@ -10,7 +10,7 @@ import VideoAnalyticsModal from './components/VideoAnalyticsModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import LoginModal from './components/LoginModal';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { auth } from './services/firebaseService';
+import { auth, fetchAssignedApiKey, fetchAssignedAiKey } from './services/firebaseService';
 
 const SEARCH_MODES = [
   { value: SearchMode.KEYWORDS, label: 'Từ khoá' },
@@ -52,10 +52,11 @@ const App: React.FC = () => {
   const isLoading = loadingState !== LoadingState.IDLE && loadingState !== LoadingState.ERROR;
 
   useEffect(() => {
-    const storedYt = getYoutubeApiKey();
+    // Không tự động load key ở LocalStorage cho YouTube Key vì cấp qua Database
+    // Tuy nhiên Gemini Key sẽ được nhập thủ công từ LocalStorage
     const storedGemini = getGeminiApiKey();
-    if (storedYt) setYoutubeApiKey(storedYt);
     if (storedGemini) setGeminiApiKey(storedGemini);
+
     setSavedReports(getSavedReports());
   }, []);
 
@@ -63,10 +64,34 @@ const App: React.FC = () => {
     setSavedReports(getSavedReports());
   }, [selectedVideo]);
 
-  // Listen to Firebase Auth state changes
+  // Listen to Firebase Auth state changes & Fetch API Key if assigned
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+
+      if (currentUser && currentUser.email) {
+        // Tài khoản đã đăng nhập, lấy YouTube API Key từ Firestore
+        try {
+          const fetchedKey = await fetchAssignedApiKey(currentUser.email);
+
+          if (fetchedKey) setYoutubeApiKey(fetchedKey);
+          if (fetchedKey) {
+            setYoutubeApiKey(fetchedKey);
+
+            // Nếu có Gemini key trong máy, thì có thể đóng modal
+            const storedGemini = getGeminiApiKey();
+            if (fetchedKey && storedGemini) {
+              setIsKeyModalOpen(false); // Đóng modal bắt nhập tự động nếu đã lấy được
+            } else if (!storedGemini) {
+              setIsKeyModalOpen(true); // Yêu cầu người dùng nhập Gemini Key
+            }
+          } else {
+            console.log("Không tìm thấy cấu hình Key từ Database cho user này.");
+          }
+        } catch (error) {
+          console.error("Lỗi khi đồng bộ Settings:", error);
+        }
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -216,8 +241,8 @@ const App: React.FC = () => {
               <span className="text-2xl">💡</span> Hướng dẫn nhanh
             </h3>
             <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-medium text-gray-400 leading-relaxed">
-              <li className="flex gap-2"><span>1.</span> Truy cập Google Cloud Console để lấy <b>YouTube Data API Key</b>.</li>
-              <li className="flex gap-2"><span>2.</span> Nhập API Key vào ô bảo mật phía dưới và nhấn "Lưu" để dùng lâu dài.</li>
+              <li className="flex gap-2"><span>1.</span> <b>YouTube Data API Key</b> được cấp tự động thông qua tài khoản đăng nhập. Nên bạn hoàn toàn không cần cấu hình.</li>
+              <li className="flex gap-2"><span>2.</span> Nhập <b>Gemini AI API Key</b> vào phần Quản lý API Key để kích hoạt chức năng phân tích AI.</li>
               <li className="flex gap-2"><span>3.</span> Nhập từ khoá hoặc link kênh bạn muốn nghiên cứu.</li>
               <li className="flex gap-2"><span>4.</span> Sử dụng các bộ lọc Vùng, Thời gian để AI lấy dữ liệu Real-time chính xác nhất.</li>
             </ul>
@@ -481,8 +506,8 @@ const App: React.FC = () => {
               <p className="text-[10px] text-gray-600 font-black uppercase tracking-widest hidden sm:block">Nhấn vào ảnh để xem phân tích AI DNA</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-10">
-              {videos.map((video) => (
-                <ThumbnailCard key={video.id} video={video} onShowAnalytics={(v) => setSelectedVideo(v)} />
+              {videos.map((video, idx) => (
+                <ThumbnailCard key={`${video.id}-${idx}`} video={video} onShowAnalytics={(v) => setSelectedVideo(v)} />
               ))}
             </div>
           </div>

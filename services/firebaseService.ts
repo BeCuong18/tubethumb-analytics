@@ -43,3 +43,62 @@ export const verifyAndBindDevice = async (uid: string, machineId: string, email?
         return true; // Bound successfully, allow login
     }
 };
+
+// Hàm tiện ích lấy API Key được chia sẻ dành riêng cho User qua Database (Mô hình Document tham chiếu)
+export const fetchAssignedApiKey = async (email: string): Promise<string | null> => {
+    try {
+        // 1. Tìm thông tin config của user
+        const accountRef = doc(db, 'accounts', email);
+        const accountSnap = await getDoc(accountRef);
+
+        if (accountSnap.exists()) {
+            const data = accountSnap.data();
+            // Kiểm tra xem User có được gán ID của Key Group nào không
+            if (data.assigned_key_id) {
+                // 2. Sang collection youtube_keys để lấy API Key thực
+                const keyRef = doc(db, 'youtube_keys', data.assigned_key_id);
+                const keySnap = await getDoc(keyRef);
+
+                if (keySnap.exists()) {
+                    return keySnap.data().api_value; // Trả về mã AIzaSy...
+                } else {
+                    console.warn(`Không tìm thấy youtube_keys với ID: ${data.assigned_key_id}`);
+                }
+            } else {
+                console.warn(`User ${email} chưa được cấp phát assigned_key_id`);
+            }
+        }
+    } catch (error) {
+        console.error("Lỗi cấp phát API Key:", error);
+    }
+    return null;
+};
+
+// MỚI: Hàm lấy AI API Key được chia sẻ cho user từ bảng ai_keys
+export const fetchAssignedAiKey = async (email: string): Promise<string | null> => {
+    try {
+        const accountRef = doc(db, 'accounts', email);
+        const accountSnap = await getDoc(accountRef);
+
+        if (accountSnap.exists()) {
+            const data = accountSnap.data();
+            if (data.assigned_ai_key_id) {
+                const keyRef = doc(db, 'ai_keys', data.assigned_ai_key_id);
+                const keySnap = await getDoc(keyRef);
+
+                if (keySnap.exists()) {
+                    const aiData = keySnap.data();
+                    // Return pollinations_key if available, fallback to gemini_key, otherwise null
+                    return aiData.pollinations_key || aiData.gemini_key || null;
+                } else {
+                    console.warn(`Không tìm thấy ai_keys với ID: ${data.assigned_ai_key_id}`);
+                }
+            } else {
+                console.warn(`User ${email} chưa được cấp phát assigned_ai_key_id`);
+            }
+        }
+    } catch (error) {
+        console.error("Lỗi cấp phát AI API Key:", error);
+    }
+    return null;
+};

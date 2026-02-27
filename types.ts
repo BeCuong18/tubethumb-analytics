@@ -205,10 +205,9 @@ export const YOUTUBE_CATEGORIES = [
 ];
 
 export const GEMINI_MODELS = [
-  { id: 'gemini-3.0-flash', name: 'Gemini 3.0 Flash (Mới nhất 2026 - Siêu tốc)' },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Tư duy & Tốc độ cân bằng)' },
-  { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash (Bản thử nghiệm cũ)' },
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Bản ổn định cao cấp)' },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
 ];
 
 declare global {
