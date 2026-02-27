@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const { machineIdSync } = require('node-machine-id');
 const log = require('electron-log');
@@ -11,6 +11,22 @@ autoUpdater.logger = log;
 // Register IPC handler for machine ID
 ipcMain.handle('get-machine-id', async () => {
     return machineIdSync();
+});
+
+ipcMain.handle('get-app-version', () => {
+    return app.getVersion();
+});
+
+ipcMain.handle('check-for-updates', () => {
+    autoUpdater.checkForUpdatesAndNotify();
+});
+
+ipcMain.handle('reload-app', (event) => {
+    const webContents = event.sender;
+    const win = BrowserWindow.fromWebContents(webContents);
+    if (win) {
+        win.reload();
+    }
 });
 
 function createWindow() {
@@ -26,8 +42,40 @@ function createWindow() {
         icon: path.join(__dirname, '../public/icon.png')
     });
 
-    // Remove menu bar for cleaner look (optional)
-    win.setMenuBarVisibility(false);
+    // Setup Custom Application Menu
+    const template = [
+        {
+            label: 'Tùy chọn',
+            submenu: [
+                {
+                    label: 'Tải lại ứng dụng',
+                    accelerator: 'CmdOrCtrl+R',
+                    click(item, focusedWindow) {
+                        if (focusedWindow) focusedWindow.reload()
+                    }
+                },
+                { type: 'separator' },
+                {
+                    label: 'Thoát',
+                    accelerator: 'CmdOrCtrl+Q',
+                    click() { app.quit() }
+                }
+            ]
+        },
+        {
+            label: 'Trợ giúp',
+            submenu: [
+                {
+                    label: 'Kiểm tra bản cập nhật',
+                    click() {
+                        autoUpdater.checkForUpdatesAndNotify();
+                    }
+                }
+            ]
+        }
+    ];
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
 
     // Load app based on environment
     if (process.env.NODE_ENV === 'development') {

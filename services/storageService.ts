@@ -17,8 +17,17 @@ export const saveYoutubeApiKey = (key: string) => localStorage.setItem(YOUTUBE_A
 export const getYoutubeApiKey = (): string | null => localStorage.getItem(YOUTUBE_API_KEY_STORAGE);
 export const removeYoutubeApiKey = () => localStorage.removeItem(YOUTUBE_API_KEY_STORAGE);
 
-export const saveGeminiApiKey = (key: string) => localStorage.setItem(GEMINI_API_KEY_STORAGE, key);
-export const getGeminiApiKey = (): string | null => localStorage.getItem(GEMINI_API_KEY_STORAGE);
+export const saveGeminiApiKey = (keys: string[]) => localStorage.setItem(GEMINI_API_KEY_STORAGE, JSON.stringify(keys));
+export const getGeminiApiKey = (): string[] => {
+  const data = localStorage.getItem(GEMINI_API_KEY_STORAGE);
+  if (!data) return [];
+  try {
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [data]; // Khả năng tương thích với chuỗi đơn cũ
+  } catch {
+    return [data];
+  }
+};
 export const removeGeminiApiKey = () => localStorage.removeItem(GEMINI_API_KEY_STORAGE);
 
 // Deprecated compatibility (maps to Youtube key for now, or just remove if we update all consumers)

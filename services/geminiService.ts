@@ -27,7 +27,7 @@ const urlToGenerativePart = async (url: string) => {
 };
 
 export const analyzeKeywordSEO = async (
-  apiKey: string,
+  apiKeys: string[],
   searchTerm: string,
   videos: VideoData[],
   modelId: string,
@@ -35,7 +35,6 @@ export const analyzeKeywordSEO = async (
   timeframe: string = "12 tháng qua",
   categoryName: string = "Tất cả danh mục"
 ): Promise<KeywordAnalysisResult> => {
-  const genAI = new GoogleGenerativeAI(apiKey);
 
   const views = videos.map(v => v.viewCountRaw || 0);
   const highestViews = Math.max(...views, 0);
@@ -90,35 +89,48 @@ export const analyzeKeywordSEO = async (
   let aiData: any = null;
   let sources: KeywordAnalysisSource[] | undefined = undefined;
   let lastError: any = null;
+  let success = false;
 
-  for (const currentModel of fallbackSequence) {
-    try {
-      console.log(`[Keyword Analysis] Đang thử model: ${currentModel}`);
-      // Config tools for Flash models to enable Search
-      const toolConfig = [{ googleSearch: {} } as any];
+  for (const key of apiKeys) {
+    if (success) break;
+    if (!key.trim()) continue;
+    const genAI = new GoogleGenerativeAI(key);
 
-      const model = genAI.getGenerativeModel({
-        model: currentModel,
-        tools: toolConfig
-      });
+    for (const currentModel of fallbackSequence) {
+      if (success) break;
+      try {
+        console.log(`[Keyword Analysis] Đang thử model: ${currentModel} với Key: ...${key.slice(-4)}`);
+        // Config tools for Flash models to enable Search
+        const toolConfig = [{ googleSearch: {} } as any];
 
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      aiData = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
+        const model = genAI.getGenerativeModel({
+          model: currentModel,
+          tools: toolConfig
+        });
 
-      // Try extract Grounding metadata
-      if (result.response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-        sources = result.response.candidates[0].groundingMetadata.groundingChunks
-          .filter((chunk: any) => chunk.web?.uri)
-          .map((chunk: any) => ({ title: chunk.web.title || "Nguồn tin cậy", uri: chunk.web.uri }));
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        aiData = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
+
+        // Try extract Grounding metadata
+        if (result.response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+          sources = result.response.candidates[0].groundingMetadata.groundingChunks
+            .filter((chunk: any) => chunk.web?.uri)
+            .map((chunk: any) => ({ title: chunk.web.title || "Nguồn tin cậy", uri: chunk.web.uri }));
+        }
+
+        console.log(`[Keyword Analysis] Thành công với model: ${currentModel}`);
+        success = true;
+        break; // Thành công thì thoát vòng lặp model
+      } catch (error: any) {
+        console.warn(`[Keyword Analysis] Model ${currentModel} thất bại: ${error.message}`);
+        lastError = error;
+        aiData = null; // Đặt lại null để tiếp tục
+        if (error.message.includes('429') || error.message.includes('Quota')) {
+          console.warn('API Key đạt giới hạn, chuyển sang Key khác...');
+          break; // Thoát vòng Model, qua vòng lặp Key tiếp theo
+        }
       }
-
-      console.log(`[Keyword Analysis] Thành công với model: ${currentModel}`);
-      break; // Thành công thì thoát vòng lặp
-    } catch (error: any) {
-      console.warn(`[Keyword Analysis] Model ${currentModel} thất bại: ${error.message}`);
-      lastError = error;
-      aiData = null; // Đặt lại null để tiếp tục
     }
   }
 
@@ -154,28 +166,31 @@ export const analyzeKeywordSEO = async (
   } as KeywordAnalysisResult;
 };
 
-export const analyzeSeoStrategy = async (apiKey: string, videos: VideoData[], modelId: string): Promise<SeoAnalysisResult> => {
-  const genAI = new GoogleGenerativeAI(apiKey);
+export const analyzeSeoStrategy = async (apiKeys: string[], videos: VideoData[], modelId: string): Promise<SeoAnalysisResult> => {
   const prompt = `Phân tích chiến lược SEO video và trả về JSON (không markdown). Trả lời tiếng Việt.`;
   const fallbacks = [modelId || "gemini-3-flash-preview", "gemini-2.5-flash-lite", "gemini-2.5-flash"].filter((v, i, a) => a.indexOf(v) === i);
   let lastError;
 
-  for (const currentModel of fallbacks) {
-    try {
-      const model = genAI.getGenerativeModel({ model: currentModel, generationConfig: { responseMimeType: "application/json" } });
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim()) as SeoAnalysisResult;
-    } catch (e: any) {
-      console.warn(`[SEO Strategy] Model ${currentModel} failed: ${e.message}`);
-      lastError = e;
+  for (const key of apiKeys) {
+    if (!key.trim()) continue;
+    const genAI = new GoogleGenerativeAI(key);
+    for (const currentModel of fallbacks) {
+      try {
+        const model = genAI.getGenerativeModel({ model: currentModel, generationConfig: { responseMimeType: "application/json" } });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim()) as SeoAnalysisResult;
+      } catch (e: any) {
+        console.warn(`[SEO Strategy] Model ${currentModel} failed: ${e.message}`);
+        lastError = e;
+        if (e.message.includes('429') || e.message.includes('Quota')) break;
+      }
     }
   }
   throw new Error(`Lỗi phân tích SEO: ${lastError?.message}`);
 };
 
-export const analyzeThumbnailPatterns = async (apiKey: string, videos: VideoData[], modelId: string): Promise<ThumbnailAnalysisResult> => {
-  const genAI = new GoogleGenerativeAI(apiKey);
+export const analyzeThumbnailPatterns = async (apiKeys: string[], videos: VideoData[], modelId: string): Promise<ThumbnailAnalysisResult> => {
   const prompt = `Phân tích mẫu thumbnail hiệu quả và trả về JSON (không markdown). Trả lời tiếng Việt.
     Yêu cầu trả về JSON có cấu trúc như sau:
     {
@@ -211,81 +226,56 @@ export const analyzeThumbnailPatterns = async (apiKey: string, videos: VideoData
   const fallbacks = [modelId || "gemini-3-flash-preview", "gemini-2.5-flash-lite", "gemini-2.5-flash"].filter((v, i, a) => a.indexOf(v) === i);
   let lastError;
 
-  for (const currentModel of fallbacks) {
-    try {
-      const model = genAI.getGenerativeModel({ model: currentModel, generationConfig: { responseMimeType: "application/json" } });
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim()) as ThumbnailAnalysisResult;
-    } catch (e: any) {
-      console.warn(`[Thumbnail Patterns] Model ${currentModel} failed: ${e.message}`);
-      lastError = e;
+  for (const key of apiKeys) {
+    if (!key.trim()) continue;
+    const genAI = new GoogleGenerativeAI(key);
+    for (const currentModel of fallbacks) {
+      try {
+        const model = genAI.getGenerativeModel({ model: currentModel, generationConfig: { responseMimeType: "application/json" } });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim()) as ThumbnailAnalysisResult;
+      } catch (e: any) {
+        console.warn(`[Thumbnail Patterns] Model ${currentModel} failed: ${e.message}`);
+        lastError = e;
+        if (e.message.includes('429') || e.message.includes('Quota')) break;
+      }
     }
   }
   throw new Error(`Lỗi phân tích Thumbnail: ${lastError?.message}`);
 };
 
-export const analyzeChannelStrategy = async (apiKey: string, videos: VideoData[], modelId: string): Promise<ChannelAnalysisResult> => {
-  const genAI = new GoogleGenerativeAI(apiKey);
+export const analyzeChannelStrategy = async (apiKeys: string[], videos: VideoData[], modelId: string): Promise<ChannelAnalysisResult> => {
   const prompt = `Phân tích SWOT kênh và trả về JSON (không markdown). Trả lời tiếng Việt.`;
   const fallbacks = [modelId || "gemini-3-flash-preview", "gemini-2.5-flash-lite", "gemini-2.5-flash"].filter((v, i, a) => a.indexOf(v) === i);
   let lastError;
 
-  for (const currentModel of fallbacks) {
-    try {
-      const model = genAI.getGenerativeModel({ model: currentModel, generationConfig: { responseMimeType: "application/json" } });
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim()) as ChannelAnalysisResult;
-    } catch (e: any) {
-      console.warn(`[Channel Strategy] Model ${currentModel} failed: ${e.message}`);
-      lastError = e;
+  for (const key of apiKeys) {
+    if (!key.trim()) continue;
+    const genAI = new GoogleGenerativeAI(key);
+    for (const currentModel of fallbacks) {
+      try {
+        const model = genAI.getGenerativeModel({ model: currentModel, generationConfig: { responseMimeType: "application/json" } });
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim()) as ChannelAnalysisResult;
+      } catch (e: any) {
+        console.warn(`[Channel Strategy] Model ${currentModel} failed: ${e.message}`);
+        lastError = e;
+        if (e.message.includes('429') || e.message.includes('Quota')) break;
+      }
     }
   }
   throw new Error(`Lỗi phân tích Kênh: ${lastError?.message}`);
 };
 
 export const generateThumbnailVisual = async (apiKey: string, video: VideoData, suggestion: any, fullAnalysis: any): Promise<{ imagePrompt: string, imageUrl: string }> => {
-  console.log("DEBUG: Starting generateThumbnailVisual with Imagen 4");
-  let imagePrompt = "";
+  console.log("DEBUG: Starting generateThumbnailVisual with Pollinations FLUX");
+
+  let imagePrompt = suggestion.imagePrompt || `High quality 4k youtube thumbnail, photorealistic, ${suggestion.background}, ${suggestion.textOverlay}`;
+
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    // Use Gemini 2.5 Flash to generate a detailed image prompt first
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', generationConfig: { responseMimeType: "text/plain" } });
-
-    const textPrompt = `
-      You are a world-class YouTube Thumbnail Designer.
-      Goal: Create a "After" version of a thumbnail that fixes the weaknesses of the current one.
-
-      Video Title: ${video.title}
-      
-      Current Analysis (The "Before" state):
-      - Strengths: ${fullAnalysis?.strengths || "N/A"}
-      - Weaknesses to Fix: ${fullAnalysis?.weaknesses || "N/A"}
-      - Improvement Advice: ${Array.isArray(fullAnalysis?.improvementSuggestions) ? fullAnalysis.improvementSuggestions.join('. ') : (fullAnalysis?.improvementSuggestions || "Make it pop")}
-
-      Your Design Plan (The "After" state):
-      - Style: ${suggestion.styleName}
-      - Background: ${suggestion.background}
-      - Text Overlay: ${suggestion.textOverlay}
-      - Layout: ${suggestion.layoutExample}
-
-      TASK: Create a HIGHLY DETAILED, PHOTOREALISTIC image generation prompt (in English) for this specific design style.
-      The prompt must:
-      1. Directly address the "Weaknesses" (e.g., if weakness is "cluttered", prompt for "clean, minimal").
-      2. Follow the "Design Plan".
-      3. Describe the visual elements (lighting, colors, expressions, text placement) in extreme detail for an AI generator.
-      4. Include keywords: "high quality, 4k, trending on youtube, vibrant, high contrast, catchy".
-
-      Return ONLY the raw prompt string, no markdown, no explanations. Max 500 characters.
-    `;
-
-    const result = await model.generateContent(textPrompt);
-    imagePrompt = result.response.text().trim();
-    if (imagePrompt.length > 500) {
-      imagePrompt = imagePrompt.substring(0, 500); // Imagen models sometimes have stricter prompt length limits
-    }
-    console.log("DEBUG: Generated Image Prompt:", imagePrompt);
+    console.log("DEBUG: Using Pre-generated Image Prompt:", imagePrompt);
 
     // Use Pollinations.ai FLUX model
     console.log(`[Image Generation] Sử dụng Pollinations.ai với model FLUX...`);
@@ -320,57 +310,58 @@ export const generateThumbnailVisual = async (apiKey: string, video: VideoData, 
   }
 };
 
-export const analyzeSingleVideoAnalytics = async (apiKey: string, video: VideoData, modelId: string): Promise<SingleVideoAnalysis> => {
-  const genAI = new GoogleGenerativeAI(apiKey);
-
+export const analyzeSingleVideoAnalytics = async (apiKeys: string[], video: VideoData, modelId: string): Promise<SingleVideoAnalysis> => {
   const prompt = `
-    Phân tích chi tiết video YouTube và Thumbnail (nếu có):
+    Phân tích chi tiết video YouTube và Thumbnail(nếu có):
     Tiêu đề: ${video.title}
     Mô tả: ${video.description}
-    Kênh: ${video.channelTitle}
-    View: ${video.viewCountRaw}, Like: ${video.likeCountRaw}, ER: ${video.engagementRate}%
+  Kênh: ${video.channelTitle}
+  View: ${video.viewCountRaw}, Like: ${video.likeCountRaw}, ER: ${video.engagementRate}%
 
-    YÊU CẦU QUAN TRỌNG: 
-    1. PHÂN TÍCH SÂU VỀ HÌNH ẢNH THUMBNAIL (Bố cục, màu sắc, cảm xúc, text trên ảnh).
-    2. TẤT CẢ OUTPUT PHẢI LÀ TIẾNG VIỆT 100%.
+    YÊU CẦU QUAN TRỌNG:
+  1. PHÂN TÍCH SÂU VỀ HÌNH ẢNH THUMBNAIL(Bố cục, màu sắc, cảm xúc, text trên ảnh).
+    2. TẤT CẢ OUTPUT PHẢI LÀ TIẾNG VIỆT 100 %.
 
-    Yêu cầu trả về JSON chính xác (không markdown):
-    {
-      "performanceVerdict": "string (Nhận định hiệu suất)",
+    Yêu cầu trả về JSON chính xác(không markdown):
+  {
+    "performanceVerdict": "string (Nhận định hiệu suất)",
       "audienceHook": "string (Yếu tố thu hút)",
-      "retentionStrategy": "string (Chiến lược giữ chân)",
-      "growthPotential": "string (Tiềm năng tăng trưởng)",
-      "predictedDemographics": { "ageGroups": "string", "genderDistribution": "string", "targetLocations": "string" },
-      "thumbnailAnalysis": {
-         "strengths": "string (Điểm mạnh của thumbnail)",
-         "weaknesses": "string (Điểm yếu)",
-         "emotionalTriggers": "string (Yếu tố cảm xúc, khuôn mặt...)",
-         "textAnalysis": "string (Phân tích text trên ảnh: font, màu, nội dung)",
-         "composition": "string (Bố cục, độ tương phản, nổi bật)",
-         "improvementSuggestions": ["string (Đề xuất 1: Rõ ràng, cụ thể)", "string (Đề xuất 2: Khác biệt với đề xuất 1)", "string (Đề xuất 3: Đột phá, sáng tạo)"],
-         "designProposals": [
-            {
-              "styleName": "string (Tên phong cách, VD: Gây sốc, Bí ẩn, Tươi sáng...)",
-              "background": "string (Mô tả background)",
-              "textOverlay": "string (Text trên ảnh)",
-              "layoutExample": "string (Mô tả bố cục)"
-            },
-            {
-              "styleName": "string (Phong cách 2)",
-              "background": "string",
-              "textOverlay": "string",
-              "layoutExample": "string"
-            },
-            {
-              "styleName": "string (Phong cách 3)",
-              "background": "string",
-              "textOverlay": "string",
-              "layoutExample": "string"
-            }
-         ]
-      },
-      "copyrightDetails": "string (Nếu video có bản quyền (licensedContent=true), hãy trích xuất thông tin bản quyền từ mô tả/tiêu đề hoặc ghi 'Thông tin bản quyền được xác định bởi hệ thống YouTube'. Nếu không, ghi 'Không tìm thấy thông tin bản quyền cụ thể')"
-    }
+        "retentionStrategy": "string (Chiến lược giữ chân)",
+          "growthPotential": "string (Tiềm năng tăng trưởng)",
+            "predictedDemographics": { "ageGroups": "string", "genderDistribution": "string", "targetLocations": "string" },
+    "thumbnailAnalysis": {
+      "strengths": "string (Điểm mạnh của thumbnail)",
+        "weaknesses": "string (Điểm yếu)",
+          "emotionalTriggers": "string (Yếu tố cảm xúc, khuôn mặt...)",
+            "textAnalysis": "string (Phân tích text trên ảnh: font, màu, nội dung)",
+              "composition": "string (Bố cục, độ tương phản, nổi bật)",
+                "improvementSuggestions": ["string (Đề xuất 1: Rõ ràng, cụ thể)", "string (Đề xuất 2: Khác biệt với đề xuất 1)", "string (Đề xuất 3: Đột phá, sáng tạo)"],
+                  "designProposals": [
+                    {
+                      "styleName": "string (Tên phong cách, VD: Gây sốc, Bí ẩn, Tươi sáng...)",
+                      "background": "string (Mô tả background)",
+                      "textOverlay": "string (Text trên ảnh)",
+                      "layoutExample": "string (Mô tả bố cục)",
+                      "imagePrompt": "string (BẮT BUỘC Tiếng Anh, max 500 ký tự. Prompt để AI vẽ ảnh 3D/Photorealistic chi tiết về bối cảnh, nhân vật, màu sắc, high quality, 4k)"
+                    },
+                    {
+                      "styleName": "string (Phong cách 2)",
+                      "background": "string",
+                      "textOverlay": "string",
+                      "layoutExample": "string",
+                      "imagePrompt": "string (Tiếng Anh, max 500 ký tự)"
+                    },
+                    {
+                      "styleName": "string (Phong cách 3)",
+                      "background": "string",
+                      "textOverlay": "string",
+                      "layoutExample": "string",
+                      "imagePrompt": "string (Tiếng Anh, max 500 ký tự)"
+                    }
+                  ]
+    },
+    "copyrightDetails": "string (Nếu video có bản quyền (licensedContent=true), hãy trích xuất thông tin bản quyền từ mô tả/tiêu đề hoặc ghi 'Thông tin bản quyền được xác định bởi hệ thống YouTube'. Nếu không, ghi 'Không tìm thấy thông tin bản quyền cụ thể')"
+  }
   `;
 
   // Fetch image if available
@@ -395,18 +386,23 @@ export const analyzeSingleVideoAnalytics = async (apiKey: string, video: VideoDa
   const fallbacks = [targetModelId, 'gemini-3-flash-preview', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'].filter((v, i, a) => a.indexOf(v) === i);
   let lastError;
 
-  for (const currentModel of fallbacks) {
-    try {
-      console.log(`[Single Video Analytics] Thử model: ${currentModel}...`);
-      const fallbackModel = genAI.getGenerativeModel({ model: currentModel, generationConfig: { responseMimeType: "application/json" } });
-      const fallbackResult = await fallbackModel.generateContent({ contents: [{ role: "user", parts }] });
-      const fallbackText = fallbackResult.response.text();
-      const cleanedFallbackText = fallbackText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const fallbackAnalysis = JSON.parse(cleanedFallbackText) as SingleVideoAnalysis;
-      return fallbackAnalysis;
-    } catch (error: any) {
-      console.warn(`[Single Video Analytics] Fallback ${currentModel} failed: ${error.message}`);
-      lastError = error;
+  for (const key of apiKeys) {
+    if (!key.trim()) continue;
+    const genAI = new GoogleGenerativeAI(key);
+    for (const currentModel of fallbacks) {
+      try {
+        console.log(`[Single Video Analytics] Thử model: ${currentModel}...`);
+        const fallbackModel = genAI.getGenerativeModel({ model: currentModel, generationConfig: { responseMimeType: "application/json" } });
+        const fallbackResult = await fallbackModel.generateContent({ contents: [{ role: "user", parts }] });
+        const fallbackText = fallbackResult.response.text();
+        const cleanedFallbackText = fallbackText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const fallbackAnalysis = JSON.parse(cleanedFallbackText) as SingleVideoAnalysis;
+        return fallbackAnalysis;
+      } catch (error: any) {
+        console.warn(`[Single Video Analytics] Fallback ${currentModel} failed: ${error.message}`);
+        lastError = error;
+        if (error.message.includes('429') || error.message.includes('Quota')) break;
+      }
     }
   }
 

@@ -1,7 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    getMachineId: () => ipcRenderer.invoke('get-machine-id')
+    getMachineId: () => ipcRenderer.invoke('get-machine-id'),
+    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+    reloadApp: () => ipcRenderer.invoke('reload-app')
 });
 
 window.addEventListener('DOMContentLoaded', () => {

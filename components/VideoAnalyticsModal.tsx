@@ -2,16 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { VideoData, SingleVideoAnalysis, GEMINI_MODELS } from '../types';
 import { analyzeSingleVideoAnalytics, generateThumbnailVisual } from '../services/geminiService';
 import { saveReport, exportReportToJSON, exportReportToExcel, exportReportToWord } from '../services/storageService';
+import { auth, checkUsageLimit, incrementUsage } from '../services/firebaseService';
 
 interface VideoAnalyticsModalProps {
   video: VideoData;
   onClose: () => void;
   geminiModel: string;
-  apiKey: string;
+  apiKey: string | string[]; // Cập nhật để hỗ trợ mảng API key nếu cần
+  initialAnalysis?: SingleVideoAnalysis | null;
 }
 
-const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClose, geminiModel, apiKey }) => {
-  const [analysis, setAnalysis] = useState<SingleVideoAnalysis | null>(null);
+const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClose, geminiModel, apiKey, initialAnalysis }) => {
+  const [analysis, setAnalysis] = useState<SingleVideoAnalysis | null>(initialAnalysis || null);
   const [loading, setLoading] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -23,8 +25,24 @@ const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClos
     setLoading(true);
     setErrorMsg(null);
     try {
+      const email = auth.currentUser?.email;
+      if (email) {
+        // Giới hạn 10 lượt sử dụng mỗi ngày cho phiên bản hiện tại
+        const isAllowed = await checkUsageLimit(email, 10);
+        if (!isAllowed) {
+          setErrorMsg("Hệ thống: Bạn đã đạt giới hạn 10 lượt phân tích chuyên sâu AI hôm nay. Vui lòng quay lại vào ngày mai!");
+          setLoading(false);
+          return;
+        }
+      }
+
       const result = await analyzeSingleVideoAnalytics(apiKey, video, geminiModel);
       setAnalysis(result);
+
+      // Tăng số lượt sử dụng sau khi gọi AI thành công
+      if (email) {
+        await incrementUsage(email);
+      }
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err.message || "Lỗi không thể phân tích dữ liệu từ Gemini.");
@@ -103,9 +121,30 @@ const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClos
     });
   };
 
+  const handleDownloadImage = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Lỗi khi tải ảnh:", error);
+      // Fallback
+      window.open(url, '_blank');
+    }
+  };
+
   useEffect(() => {
-    getAiAnalysis();
-  }, [video.id]);
+    if (!initialAnalysis) {
+      getAiAnalysis();
+    }
+  }, [video.id, initialAnalysis]);
 
   const stats = [
     { label: 'Lượt xem', value: video.viewCountRaw?.toLocaleString(), icon: '👁️', color: 'text-blue-400' },
@@ -415,17 +454,23 @@ const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClos
                                         className="w-full h-full relative cursor-pointer"
                                         onClick={() => {
                                           setTimeout(() => {
-                                            const newWindow = window.open();
-                                            if (newWindow) {
-                                              newWindow.document.write(`
-                                                <html>
-                                                  <head><title>Original Image Preview - TubeThumb</title></head>
-                                                  <body style="margin:0; background:black; display:flex; justify-content:center; align-items:center; height:100vh;">
-                                                    <img src="${proposal.imageUrl}" style="max-width:100%; max-height:100%; object-fit:contain;" />
-                                                  </body>
-                                                </html>
-                                              `);
-                                              newWindow.document.close();
+                                            if (window.electronAPI) {
+                                              window.open(proposal.imageUrl, '_blank');
+                                            } else {
+                                              const newWindow = window.open();
+                                              if (newWindow) {
+                                                newWindow.document.write(`
+                                                    <html>
+                                                      <head><title>Original Image Preview - TubeThumb</title></head>
+                                                      <body style="margin:0; background:black; display:flex; justify-content:center; align-items:center; height:100vh;">
+                                                        <img src="${proposal.imageUrl}" style="max-width:100%; max-height:100%; object-fit:contain;" />
+                                                      </body>
+                                                    </html>
+                                                  `);
+                                                newWindow.document.close();
+                                              } else {
+                                                window.open(proposal.imageUrl, '_blank');
+                                              }
                                             }
                                           }, 0);
                                         }}
@@ -437,11 +482,16 @@ const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClos
                                           loading="lazy"
                                           onError={() => setImageError(prev => ({ ...prev, [index]: true }))}
                                         />
-                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all pointer-events-none" />
-                                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                          <span className="bg-black/80 text-white text-xs px-3 py-1 rounded-full border border-white/20 backdrop-blur-sm">
-                                            🔍 Mở ảnh gốc
+                                        <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                          <span className="bg-black/80 text-white text-xs px-3 py-1 rounded-full border border-white/20 backdrop-blur-sm shadow-xl">
+                                            🔍 Xem ảnh
                                           </span>
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); handleDownloadImage(proposal.imageUrl!, `AI_Thumbnail_${index + 1}.jpg`); }}
+                                            className="pointer-events-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full text-xs font-bold border border-white/20 shadow-xl transition-all"
+                                          >
+                                            Tải ảnh xuống
+                                          </button>
                                         </div>
                                       </div>
                                     ) : (
@@ -540,20 +590,32 @@ const VideoAnalyticsModal: React.FC<VideoAnalyticsModalProps> = ({ video, onClos
                   <svg className="w-6 h-6 transition-transform group-hover:scale-125" fill="currentColor" viewBox="0 0 24 24"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 .6-.03 1.29-.1 2.09-.06.8-.15 1.43-.28 1.9-.13.47-.29.81-.48 1.01-.19.2-.43.32-.72.36-.53.08-1.5.11-2.92.11H6.5c-1.42 0-2.39-.03-2.92-.11-.29-.04-.53-.16-.72-.36-.19-.2-.35-.54-.48-1.01-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-.6.03-1.29.1-2.09.06-.8.15-1.43.28-1.9.13-.47.29-.81.48-1.01.19-.2.43-.32.72-.36.53-.08 1.5-.11 2.92-.11h11c1.42 0 2.39.03 2.92.11.29.04.53.16.72.36.19.2.35.54.48 1.01z" /></svg>
                   WATCH ON YOUTUBE
                 </a>
-                <div className="w-full sm:flex-1 flex gap-4">
-                  <button
-                    onClick={() => window.open(video.thumbnailUrl, '_blank')}
-                    className="flex-1 bg-white/5 hover:bg-white/10 text-white py-5 rounded-[1.5rem] font-black transition-all border border-white/5 flex items-center justify-center gap-2"
-                  >
-                    IMAGE
-                  </button>
-                  <button
-                    onClick={handleExportWord}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-[1.5rem] font-black transition-all flex items-center justify-center gap-2 shadow-2xl shadow-blue-900/40"
-                  >
-                    DOCX
-                  </button>
-                </div>
+                <button
+                  onClick={() => {
+                    if (window.electronAPI) {
+                      window.open(video.thumbnailUrl, '_blank');
+                    } else {
+                      window.open(video.thumbnailUrl, '_blank');
+                    }
+                  }}
+                  className="flex-1 bg-white/5 hover:bg-white/10 text-white py-5 rounded-[1.5rem] font-black transition-all border border-white/5 flex items-center justify-center gap-2"
+                  title="Mở ảnh gốc trong thẻ mới"
+                >
+                  MỞ ẢNH
+                </button>
+                <button
+                  onClick={() => handleDownloadImage(video.thumbnailUrl, `Thumbnail_${video.id}.jpg`)}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-5 rounded-[1.5rem] font-black transition-all flex items-center justify-center gap-2 shadow-2xl shadow-emerald-900/40"
+                  title="Tải ảnh Thumbnail về máy"
+                >
+                  TẢI ẢNH
+                </button>
+                <button
+                  onClick={handleExportWord}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-5 rounded-[1.5rem] font-black transition-all flex items-center justify-center gap-2 shadow-2xl shadow-blue-900/40"
+                >
+                  DOCX
+                </button>
               </div>
             </div>
           </div>

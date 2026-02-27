@@ -102,3 +102,82 @@ export const fetchAssignedAiKey = async (email: string): Promise<string | null> 
     }
     return null;
 };
+
+// MỚI: Hàm kiểm tra giới hạn sử dụng trong ngày
+export const checkUsageLimit = async (email: string, limit: number): Promise<boolean> => {
+    try {
+        const accountRef = doc(db, 'accounts', email);
+        const accountSnap = await getDoc(accountRef);
+
+        if (accountSnap.exists()) {
+            const data = accountSnap.data();
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+            // Nếu là ngày mới, reset số lượt hoặc nếu chưa có thông tin thì cho phép
+            if (!data.lastUsageDate || data.lastUsageDate !== today) {
+                return true;
+            }
+
+            // Nếu cùng ngày, kiểm tra xem đã vượt limit chưa
+            if ((data.dailyUsage || 0) < limit) {
+                return true;
+            } else {
+                return false; // Hết lượt trong ngày
+            }
+        }
+        return true; // Mặc định cho phép nếu chưa có data
+    } catch (error) {
+        console.error("Lỗi kiểm tra giới hạn sử dụng:", error);
+        return false; // Chặn nếu có lỗi
+    }
+};
+
+// MỚI: Hàm tăng số lượt sử dụng
+export const incrementUsage = async (email: string): Promise<void> => {
+    try {
+        const accountRef = doc(db, 'accounts', email);
+        const accountSnap = await getDoc(accountRef);
+
+        if (accountSnap.exists()) {
+            const data = accountSnap.data();
+            const today = new Date().toISOString().split('T')[0];
+
+            let newUsage = 1;
+            if (data.lastUsageDate === today) {
+                newUsage = (data.dailyUsage || 0) + 1;
+            }
+
+            await setDoc(accountRef, {
+                ...data, // Giữ lại data cũ
+                dailyUsage: newUsage,
+                lastUsageDate: today
+            });
+        }
+    } catch (error) {
+        console.error("Lỗi cập nhật số lượt sử dụng:", error);
+    }
+};
+
+// MỚI: Lấy thông tin sử dụng hiện tại
+export const getUsageInfo = async (email: string, limit: number): Promise<{ used: number; remaining: number }> => {
+    try {
+        const accountRef = doc(db, 'accounts', email);
+        const accountSnap = await getDoc(accountRef);
+
+        if (accountSnap.exists()) {
+            const data = accountSnap.data();
+            const today = new Date().toISOString().split('T')[0];
+
+            if (!data.lastUsageDate || data.lastUsageDate !== today) {
+                return { used: 0, remaining: limit };
+            }
+
+            const used = data.dailyUsage || 0;
+            return { used, remaining: Math.max(0, limit - used) };
+        }
+        return { used: 0, remaining: limit };
+    } catch (error) {
+        console.error("Lỗi lấy thông tin giới hạn:", error);
+        return { used: 0, remaining: 0 };
+    }
+};

@@ -1,16 +1,16 @@
 
 import React, { useState, FormEvent, useEffect, useMemo } from 'react';
-import { LoadingState, VideoData, SeoAnalysisResult, ThumbnailAnalysisResult, ChannelAnalysisResult, KeywordAnalysisResult, COUNTRIES, SearchMode, GEMINI_MODELS, SavedAnalysis, TIMEFRAMES, YOUTUBE_CATEGORIES } from './types';
+import { LoadingState, VideoData, SeoAnalysisResult, ThumbnailAnalysisResult, ChannelAnalysisResult, KeywordAnalysisResult, COUNTRIES, SearchMode, GEMINI_MODELS, SavedAnalysis, TIMEFRAMES, YOUTUBE_CATEGORIES, SingleVideoAnalysis } from './types';
 import { analyzeSeoStrategy, analyzeThumbnailPatterns, analyzeChannelStrategy, analyzeKeywordSEO } from './services/geminiService';
 import { fetchYouTubeVideos, extractChannelIdentifier, extractVideoId, extractPlaylistId } from './services/youtubeService';
-import { getSavedReports, getYoutubeApiKey, getGeminiApiKey } from './services/storageService';
+import { getSavedReports, getYoutubeApiKey, getGeminiApiKey, deleteReport } from './services/storageService';
 import ThumbnailCard from './components/ThumbnailCard';
 import TagInput from './components/TagInput';
 import VideoAnalyticsModal from './components/VideoAnalyticsModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import LoginModal from './components/LoginModal';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { auth, fetchAssignedApiKey, fetchAssignedAiKey } from './services/firebaseService';
+import { auth, fetchAssignedApiKey, fetchAssignedAiKey, checkUsageLimit, incrementUsage, getUsageInfo } from './services/firebaseService';
 
 const SEARCH_MODES = [
   { value: SearchMode.KEYWORDS, label: 'Từ khoá' },
@@ -23,7 +23,7 @@ const SEARCH_MODES = [
 
 const App: React.FC = () => {
   const [youtubeApiKey, setYoutubeApiKey] = useState('');
-  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [geminiApiKey, setGeminiApiKey] = useState<string[]>([]);
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [inputTags, setInputTags] = useState<string[]>([]);
@@ -36,10 +36,30 @@ const App: React.FC = () => {
 
   const [videos, setVideos] = useState<VideoData[]>([]);
   const [selectedVideo, setSelectedVideo] = useState<VideoData | null>(null);
+  const [selectedSavedAnalysis, setSelectedSavedAnalysis] = useState<SingleVideoAnalysis | null>(null);
   const [savedReports, setSavedReports] = useState<SavedAnalysis[]>([]);
 
   // Firebase Auth State
   const [user, setUser] = useState<User | null>(null);
+  const [usageInfo, setUsageInfo] = useState<{ used: number, remaining: number } | null>(null);
+
+  const fetchUsageInfo = async () => {
+    if (auth.currentUser?.email) {
+      const info = await getUsageInfo(auth.currentUser.email, 10);
+      setUsageInfo(info);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsageInfo();
+  }, [user]);
+
+  const handleDeleteReport = (video: VideoData) => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa báo cáo này khỏi kho lưu trữ?')) {
+      deleteReport(video.id);
+      setSavedReports(getSavedReports());
+    }
+  };
 
   const [keywordResult, setKeywordResult] = useState<KeywordAnalysisResult | null>(null);
   const [keywordTab, setKeywordTab] = useState<'overview' | 'opportunities' | 'rising'>('overview');
@@ -131,9 +151,20 @@ const App: React.FC = () => {
           const timeLabel = TIMEFRAMES.find(t => t.value === selectedTimeframe)?.label || "12 tháng qua";
           const catName = YOUTUBE_CATEGORIES.find(c => c.id === selectedCategory)?.name || "Tất cả danh mục";
 
-          if (geminiApiKey) {
+          if (geminiApiKey && geminiApiKey.length > 0) {
+            const email = auth.currentUser?.email;
+            if (email) {
+              const isAllowed = await checkUsageLimit(email, 10);
+              if (!isAllowed) {
+                throw new Error("Hệ thống: Bạn đã đạt giới hạn 10 lượt phân tích hệ thống hôm nay. Vui lòng quay lại vào ngày mai!");
+              }
+            }
             const kwAnalysis = await analyzeKeywordSEO(geminiApiKey, inputTags[0], fetchedVideos, geminiModel, regName, timeLabel, catName);
             setKeywordResult(kwAnalysis);
+            if (email) {
+              await incrementUsage(email);
+              fetchUsageInfo(); // Cập nhật lại UI số lượt sau khi dùng
+            }
           } else {
             console.warn("Skipping AI analysis: No Gemini Key");
           }
@@ -212,10 +243,15 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsKeyModalOpen(true)}
-              className={`text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-full transition-all border ${youtubeApiKey && geminiApiKey ? 'bg-green-600/10 text-green-500 border-green-600/50' : 'bg-red-600/10 text-red-500 border-red-600/50 animate-pulse'}`}
+              className={`text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-full transition-all border ${youtubeApiKey && geminiApiKey && geminiApiKey.length > 0 ? 'bg-green-600/10 text-green-500 border-green-600/50' : 'bg-red-600/10 text-red-500 border-red-600/50 animate-pulse'}`}
             >
-              {youtubeApiKey && geminiApiKey ? 'API Key: OK' : 'Nhập API Key'}
+              {youtubeApiKey && geminiApiKey && geminiApiKey.length > 0 ? 'API Key: OK' : 'Nhập API Key'}
             </button>
+            {usageInfo && (
+              <div className="text-[10px] font-black uppercase text-gray-400 border border-[#2a2a2a] px-3 py-2 rounded-full hidden sm:block" title="Lượt dùng hệ thống hôm nay">
+                Lượt dùng: <span className="text-white">{usageInfo.remaining}</span>/{usageInfo.remaining + usageInfo.used}
+              </div>
+            )}
             <button onClick={() => setShowGuide(!showGuide)} className="text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors">Hướng dẫn</button>
             <a href="#saved-reports" className="text-[10px] font-black text-white uppercase tracking-widest bg-gradient-to-r from-[#222] to-[#333] px-5 py-2.5 rounded-full transition-all border border-white/5 shadow-xl hover:scale-105">
               Kho lưu trữ ({savedReports.length})
@@ -507,14 +543,37 @@ const App: React.FC = () => {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-10">
               {videos.map((video, idx) => (
-                <ThumbnailCard key={`${video.id}-${idx}`} video={video} onShowAnalytics={(v) => setSelectedVideo(v)} />
+                <ThumbnailCard key={`${video.id}-${idx}`} video={video} onShowAnalytics={(v) => { setSelectedVideo(v); setSelectedSavedAnalysis(null); }} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Kho lưu trữ (Saved Reports) Section */}
+        {savedReports.length > 0 && (
+          <div id="saved-reports" className="space-y-12 mb-20 pt-10 border-t border-[#2a2a2a]/50">
+            <div className="flex items-center justify-between px-6">
+              <h3 className="text-2xl font-black uppercase tracking-tighter text-white">Kho Lưu Trữ ({savedReports.length})</h3>
+              <p className="text-[10px] text-gray-600 font-black uppercase tracking-widest hidden sm:block">Các báo cáo đã lưu</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-10">
+              {savedReports.map((report, idx) => (
+                <ThumbnailCard
+                  key={`saved-${report.video.id}-${idx}`}
+                  video={report.video}
+                  onShowAnalytics={(v) => {
+                    setSelectedVideo(v);
+                    setSelectedSavedAnalysis(report.analysis);
+                  }}
+                  onDelete={handleDeleteReport}
+                />
               ))}
             </div>
           </div>
         )}
 
         {/* Modal phân tích video */}
-        {selectedVideo && <VideoAnalyticsModal video={selectedVideo} onClose={() => setSelectedVideo(null)} geminiModel={geminiModel} apiKey={geminiApiKey} />}
+        {selectedVideo && <VideoAnalyticsModal video={selectedVideo} initialAnalysis={selectedSavedAnalysis} onClose={() => { setSelectedVideo(null); setSelectedSavedAnalysis(null); fetchUsageInfo(); }} geminiModel={geminiModel} apiKey={geminiApiKey} />}
 
         {/* API Key Modal */}
         {isKeyModalOpen && (
@@ -533,15 +592,31 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* Floating Support Button */}
+      <a
+        href="https://matrix.to/#/@bescuong:chat.vfastsoft.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 right-6 z-50 flex items-center justify-center w-14 h-14 bg-gradient-to-tr from-red-600 to-orange-500 text-white rounded-full shadow-[0_0_20px_rgba(220,38,38,0.4)] transition-transform hover:scale-110 group animate-bounce"
+        title="Hỗ trợ khẩn cấp"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+        </svg>
+        <span className="absolute right-16 bg-black text-white border border-white/10 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap shadow-lg">
+          Hỗ Trợ Khẩn Cấp
+        </span>
+      </a>
+
       <footer className="py-12 border-t border-[#2a2a2a] bg-[#0a0a0a]">
         <div className="max-w-7xl mx-auto px-4 flex flex-col md:row items-center justify-between gap-6">
           <div className="flex items-center gap-3 grayscale hover:grayscale-0 transition-all cursor-default">
             <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center">
               <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 .6-.03 1.29-.1 2.09-.06.8-.15 1.43-.28 1.9-.13-.47-.29-.81-.48-1.01-.19-.2-.43-.32-.72-.36-.53-.08-1.5-.11-2.92-.11H6.5c-1.42 0-2.39-.03-2.92-.11-.29-.04-.53-.16-.72-.36-.19-.2-.35-.54-.48-1.01-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-.6.03-1.29.1-2.09.06-.8.15-1.43.28-.1.13-.47.29-.81.48-1.01.19-.2.43-.32.72-.36.53-.08 1.5-.11 2.92-.11h11c1.42 0 2.39.03 2.92.11.29.04.53.16.72.36.19.2.35.54.48 1.01z" /></svg>
             </div>
-            <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">TubeThumb Master Analytics v4.5</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">TubeThumb Master Analytics v1.1.1</span>
           </div>
-          <p className="text-[10px] font-bold text-gray-700 uppercase tracking-widest text-center">© 2024 YouTube Data Insights Engine. Bảo mật API Key là trách nhiệm của người dùng.</p>
+          <p className="text-[10px] font-bold text-gray-700 uppercase tracking-widest text-center">© 2026 YouTube Data Insights Engine - Một Sản Phẩm Phát Triển Bới NEPTUNE STUIDO.</p>
           <div className="flex items-center gap-6">
             <a href="#" className="text-[9px] font-black text-gray-600 uppercase hover:text-white transition-colors">Điều khoản</a>
             <a href="#" className="text-[9px] font-black text-gray-600 uppercase hover:text-white transition-colors">Bảo mật</a>
