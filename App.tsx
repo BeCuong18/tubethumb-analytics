@@ -123,6 +123,15 @@ const App: React.FC = () => {
       return;
     }
 
+    // Kiểm tra giới hạn 15 lần/ngày cho toàn bộ hành động tìm kiếm (từ khóa, video, kênh)
+    const email = auth.currentUser?.email;
+    if (email) {
+      const isAllowed = await checkUsageLimit(email, 15);
+      if (!isAllowed) {
+        setErrorMsg("Hệ thống: Bạn đã đạt giới hạn 15 lượt sử dụng hôm nay. Vui lòng quay lại vào ngày mai để tiếp tục!");
+        return;
+      }
+    }
 
     setLoadingState(LoadingState.FETCHING_VIDEOS);
     setErrorMsg(null);
@@ -145,6 +154,12 @@ const App: React.FC = () => {
       if (fetchedVideos.length === 0) throw new Error(`Không tìm thấy video nào. Hãy thử thay đổi bộ lọc hoặc từ khoá.`);
       setVideos(fetchedVideos);
 
+      // Tăng số lượt sử dụng vì đã tìm kiếm thành công
+      if (email) {
+        await incrementUsage(email);
+        fetchUsageInfo();
+      }
+
       if (searchMode === SearchMode.KEYWORDS) {
         try {
           const regName = COUNTRIES.find(c => c.code === selectedRegion)?.name || "Toàn cầu";
@@ -152,19 +167,8 @@ const App: React.FC = () => {
           const catName = YOUTUBE_CATEGORIES.find(c => c.id === selectedCategory)?.name || "Tất cả danh mục";
 
           if (geminiApiKey && geminiApiKey.length > 0) {
-            const email = auth.currentUser?.email;
-            if (email) {
-              const isAllowed = await checkUsageLimit(email, 10);
-              if (!isAllowed) {
-                throw new Error("Hệ thống: Bạn đã đạt giới hạn 10 lượt phân tích hệ thống hôm nay. Vui lòng quay lại vào ngày mai!");
-              }
-            }
             const kwAnalysis = await analyzeKeywordSEO(geminiApiKey, inputTags[0], fetchedVideos, geminiModel, regName, timeLabel, catName);
             setKeywordResult(kwAnalysis);
-            if (email) {
-              await incrementUsage(email);
-              fetchUsageInfo(); // Cập nhật lại UI số lượt sau khi dùng
-            }
           } else {
             console.warn("Skipping AI analysis: No Gemini Key");
           }
@@ -614,7 +618,7 @@ const App: React.FC = () => {
             <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center">
               <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 .6-.03 1.29-.1 2.09-.06.8-.15 1.43-.28 1.9-.13-.47-.29-.81-.48-1.01-.19-.2-.43-.32-.72-.36-.53-.08-1.5-.11-2.92-.11H6.5c-1.42 0-2.39-.03-2.92-.11-.29-.04-.53-.16-.72-.36-.19-.2-.35-.54-.48-1.01-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-.6.03-1.29.1-2.09.06-.8.15-1.43.28-.1.13-.47.29-.81.48-1.01.19-.2.43-.32.72-.36.53-.08 1.5-.11 2.92-.11h11c1.42 0 2.39.03 2.92.11.29.04.53.16.72.36.19.2.35.54.48 1.01z" /></svg>
             </div>
-            <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">TubeThumb Master Analytics v1.1.1</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">TubeThumb Master Analytics v1.1.2</span>
           </div>
           <p className="text-[10px] font-bold text-gray-700 uppercase tracking-widest text-center">© 2026 YouTube Data Insights Engine - Một Sản Phẩm Phát Triển Bới NEPTUNE STUIDO.</p>
           <div className="flex items-center gap-6">

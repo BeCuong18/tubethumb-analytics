@@ -1,7 +1,7 @@
 {
   "name": "tubethumb-analytics",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.1.2",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on tcp:5174 && node scripts/start-electron.js\"",
-    "electron:build": "vite build && electron-builder"
+    "electron:build": "vite build && electron-builder",
+    "electron:publish": "vite build && electron-builder -p always"
   },
   "build": {
     "appId": "com.tubethumb.analytics",
