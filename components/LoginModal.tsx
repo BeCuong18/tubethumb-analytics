@@ -1,57 +1,37 @@
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth, verifyAndBindDevice } from '../services/firebaseService';
+import { authService } from '../services/authService';
 
 interface LoginModalProps {
-    onLoginSuccess: (userEmail: string) => void;
+    onLoginSuccess: (username: string) => void;
 }
 
 const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
-    const [email, setEmail] = useState('');
+    const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
+    const [computerId, setComputerId] = useState('');
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        if (!username || !password || !computerId) {
+            setError('Vui lòng nhập đầy đủ 3 trường thông tin liên kết.');
+            return;
+        }
+
         setLoading(true);
-
         try {
-            // 1. Authenticate with Firebase
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            const user = userCredential.user;
+            const result = await authService.login(username, password, computerId);
 
-            // 2. Get hardware ID securely from Electron IPC
-            let machineId = "unknown-device";
-            if (window.electronAPI && window.electronAPI.getMachineId) {
-                machineId = await window.electronAPI.getMachineId();
+            if (result && result.isLoggedIn) {
+                onLoginSuccess(username);
             } else {
-                console.warn("Electron API not found. Running in web mode fallback.");
-                // In web mode, you might want to block or use a dummy ID.
-                // For desktop, it should always be available.
+                setError('Đăng nhập không thành công. Vui lòng kiểm tra lại Tài Khoản, Mật khẩu hoặc Computer ID.');
             }
-
-            // 3. Verify and Bind Device
-            const isAllowed = await verifyAndBindDevice(user.uid, machineId, email, password);
-
-            if (isAllowed) {
-                onLoginSuccess(user.email || '');
-            } else {
-                // Log them back out if device doesn't match
-                await auth.signOut();
-                setError('Tài khoản này đã được liên kết và sử dụng trên một máy tính / thiết bị khác!');
-            }
-
         } catch (err: any) {
-            console.error(err);
-            if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-                setError('Email hoặc mật khẩu không chính xác.');
-            } else if (err.code === 'auth/too-many-requests') {
-                setError('Tài khoản tạm thời bị khóa do nhập sai quá nhiều lần. Thử lại sau.');
-            } else {
-                setError('Lỗi máy chủ rà soát. ' + err.message);
-            }
+            console.error('Login API error', err);
+            setError('Tài khoản, mật khẩu định danh không chính xác hoặc lỗi mạng.');
         } finally {
             setLoading(false);
         }
@@ -59,42 +39,18 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md">
-            <div className="bg-[#111] border border-[#333] w-full max-w-md rounded-2xl p-8 relative shadow-2xl shadow-indigo-500/10">
+            <div className="bg-[#111] border border-[#333] w-full max-w-md rounded-2xl p-8 relative shadow-2xl shadow-red-500/10">
 
                 {/* Header */}
                 <div className="flex flex-col items-center justify-center mb-8">
-                    <div className="w-16 h-16 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/20">
+                    <div className="w-16 h-16 bg-gradient-to-tr from-red-600 to-orange-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-red-500/20">
                         <span className="text-3xl text-white font-black mix-blend-overlay">T2</span>
                     </div>
-                    <h2 className="text-2xl font-black text-white text-center">Đăng Nhập Ứng Dụng</h2>
+                    <h2 className="text-2xl font-black text-white text-center">Định Danh Thiết Bị</h2>
                     <p className="text-sm text-gray-400 mt-2 text-center">Bản quyền phần mềm phân tích TubeThumb Analytics</p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-5">
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Email Tài Khoản</label>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
-                            placeholder="nhap.email@cua-ban.com"
-                            required
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Mật khẩu</label>
-                        <input
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full bg-[#1A1A1A] border border-[#333] text-white rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-                            placeholder="••••••••"
-                            required
-                        />
-                    </div>
-
+                <form onSubmit={handleLogin} className="space-y-5">
                     {error && (
                         <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-3 rounded-xl flex items-start gap-2 text-sm text-left">
                             <span className="shrink-0 mt-0.5">⚠️</span>
@@ -102,10 +58,43 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
                         </div>
                     )}
 
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-widest pl-1">Username / Tài khoản</label>
+                        <input
+                            type="text"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            placeholder="Nhập tên đăng nhập"
+                            className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all font-medium"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-widest pl-1">Mật khẩu</label>
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all font-medium"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 mb-1.5 uppercase tracking-widest pl-1">Mã thiết bị / Computer ID</label>
+                        <input
+                            type="text"
+                            value={computerId}
+                            onChange={(e) => setComputerId(e.target.value)}
+                            placeholder="Nhập System ID của máy này..."
+                            className="w-full bg-blue-900/10 border border-blue-900/40 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-bold placeholder:text-white/50 uppercase tracking-widest text-sm"
+                        />
+                    </div>
+
                     <button
                         type="submit"
                         disabled={loading}
-                        className={`w-full font-bold text-white rounded-xl px-4 py-4 uppercase tracking-widest text-sm transition-all flex justify-center items-center gap-2 ${loading ? 'bg-indigo-600/50 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-lg shadow-indigo-500/25'
+                        className={`w-full font-black text-white rounded-xl mt-4 px-4 py-4 uppercase tracking-widest text-sm transition-all flex justify-center items-center gap-2 ${loading ? 'bg-red-600/50 cursor-not-allowed' : 'bg-gradient-to-r from-red-600 to-orange-500 hover:from-red-700 hover:to-orange-600 shadow-lg shadow-red-900/25'
                             }`}
                     >
                         {loading ? (
@@ -114,16 +103,17 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
-                                Đang kiểm tra...
+                                Đang xác thực...
                             </>
                         ) : (
                             'Đăng Nhập'
                         )}
                     </button>
+
                 </form>
 
                 <div className="mt-8 pt-6 border-t border-[#222] text-center">
-                    <p className="text-xs text-gray-500">Mọi hành vi đăng nhập trái phép sẽ bị theo dõi thiết bị ID.</p>
+                    <p className="text-xs text-gray-500">Mọi hành vi đăng nhập trái phép sẽ bị theo dõi thiết bị ID tự động.</p>
                 </div>
             </div>
         </div>
@@ -131,3 +121,4 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
 };
 
 export default LoginModal;
+
