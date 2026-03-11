@@ -1,6 +1,6 @@
 
 import React, { useState, FormEvent, useEffect, useMemo } from 'react';
-import { LoadingState, VideoData, SeoAnalysisResult, ThumbnailAnalysisResult, ChannelAnalysisResult, KeywordAnalysisResult, COUNTRIES, SearchMode, GEMINI_MODELS, SavedAnalysis, TIMEFRAMES, YOUTUBE_CATEGORIES, SingleVideoAnalysis } from './types';
+import { LoadingState, VideoData, SeoAnalysisResult, ThumbnailAnalysisResult, ChannelAnalysisResult, KeywordAnalysisResult, COUNTRIES, SearchMode, GEMINI_MODELS, SavedAnalysis, TIMEFRAMES, YOUTUBE_CATEGORIES, SingleVideoAnalysis, SortBy } from './types';
 import { analyzeSeoStrategy, analyzeThumbnailPatterns, analyzeChannelStrategy, analyzeKeywordSEO } from './services/geminiService';
 import { fetchYouTubeVideos, extractChannelIdentifier, extractVideoId, extractPlaylistId } from './services/youtubeService';
 import { getSavedReports, getYoutubeApiKey, getGeminiApiKey, deleteReport } from './services/storageService';
@@ -38,6 +38,8 @@ const App: React.FC = () => {
   const [selectedVideo, setSelectedVideo] = useState<VideoData | null>(null);
   const [selectedSavedAnalysis, setSelectedSavedAnalysis] = useState<SingleVideoAnalysis | null>(null);
   const [savedReports, setSavedReports] = useState<SavedAnalysis[]>([]);
+  const [videoFilter, setVideoFilter] = useState<'ALL' | 'SHORTS' | 'UNDER_20' | 'OVER_20'>('ALL');
+  const [sortBy, setSortBy] = useState<SortBy>(SortBy.VIEWS);
 
   // Firebase Auth State
   const [user, setUser] = useState<User | null>(null);
@@ -148,7 +150,8 @@ const App: React.FC = () => {
         maxVideos,
         selectedTimeframe,
         searchMode,
-        selectedCategory
+        selectedCategory,
+        sortBy
       );
 
       if (fetchedVideos.length === 0) throw new Error(`Không tìm thấy video nào. Hãy thử thay đổi bộ lọc hoặc từ khoá.`);
@@ -215,6 +218,24 @@ const App: React.FC = () => {
       (selectedCountryKwd === 'Tất cả' || k.country === selectedCountryKwd)
     );
   }, [keywordResult, selectedTopic, selectedCountryKwd]);
+
+  const filteredVideos = useMemo(() => {
+    return videos.filter(v => {
+      if (videoFilter === 'ALL') return true;
+      const getSeconds = (str?: string) => {
+        if (!str) return 0;
+        const p = str.split(':').map(Number);
+        if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+        if (p.length === 2) return p[0] * 60 + p[1];
+        return p[0] || 0;
+      };
+      const sec = getSeconds(v.duration);
+      if (videoFilter === 'SHORTS') return sec <= 60;
+      if (videoFilter === 'UNDER_20') return sec > 60 && sec <= 1200;
+      if (videoFilter === 'OVER_20') return sec > 1200;
+      return true;
+    });
+  }, [videos, videoFilter]);
 
   const getInputPlaceholder = () => {
     switch (searchMode) {
@@ -358,6 +379,18 @@ const App: React.FC = () => {
                 className="bg-transparent text-gray-400 font-black text-[10px] uppercase tracking-widest px-4 py-2 rounded-xl hover:bg-white/5 cursor-pointer focus:outline-none border border-[#333] transition-colors"
               >
                 {YOUTUBE_CATEGORIES.map(cat => <option key={cat.id} value={cat.id} className="bg-[#1a1a1a]">{cat.name}</option>)}
+              </select>
+
+              {/* Sort By */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortBy)}
+                className="bg-transparent text-gray-400 font-black text-[10px] uppercase tracking-widest px-4 py-2 rounded-xl hover:bg-white/5 cursor-pointer focus:outline-none border border-[#333] transition-colors"
+              >
+                <option value={SortBy.VIEWS} className="bg-[#1a1a1a]">Lượt View</option>
+                <option value={SortBy.DATE_DESC} className="bg-[#1a1a1a]">Mới nhất</option>
+                <option value={SortBy.DATE_ASC} className="bg-[#1a1a1a]">Cũ nhất</option>
+                <option value={SortBy.VPH} className="bg-[#1a1a1a]">VPH cao nhất</option>
               </select>
 
               <div className="w-px h-6 bg-[#333] hidden md:block"></div>
@@ -541,12 +574,20 @@ const App: React.FC = () => {
         {/* Video Results Section */}
         {videos.length > 0 && (
           <div className="space-y-12 mb-20">
-            <div className="flex items-center justify-between px-6">
-              <h3 className="text-2xl font-black uppercase tracking-tighter text-white">Thư viện Video liên quan ({videos.length})</h3>
-              <p className="text-[10px] text-gray-600 font-black uppercase tracking-widest hidden sm:block">Nhấn vào ảnh để xem phân tích AI DNA</p>
+            <div className="flex flex-col xl:flex-row items-center justify-between px-6 gap-4">
+              <h3 className="text-2xl font-black uppercase tracking-tighter text-white">Thư viện Video liên quan ({filteredVideos.length})</h3>
+
+              <div className="flex bg-[#1a1a1a] rounded-full p-1 border border-[#2a2a2a] shadow-lg overflow-x-auto">
+                <button onClick={() => setVideoFilter('ALL')} className={`whitespace-nowrap px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${videoFilter === 'ALL' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}>Tất cả</button>
+                <button onClick={() => setVideoFilter('SHORTS')} className={`whitespace-nowrap px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${videoFilter === 'SHORTS' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}>Shorts</button>
+                <button onClick={() => setVideoFilter('UNDER_20')} className={`whitespace-nowrap px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${videoFilter === 'UNDER_20' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}>Dưới 20p</button>
+                <button onClick={() => setVideoFilter('OVER_20')} className={`whitespace-nowrap px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${videoFilter === 'OVER_20' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}>Trên 20p</button>
+              </div>
+
+              <p className="text-[10px] text-gray-600 font-black uppercase tracking-widest hidden lg:block">Nhấn vào ảnh để xem phân tích AI DNA</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-10">
-              {videos.map((video, idx) => (
+              {filteredVideos.map((video, idx) => (
                 <ThumbnailCard key={`${video.id}-${idx}`} video={video} onShowAnalytics={(v) => { setSelectedVideo(v); setSelectedSavedAnalysis(null); }} />
               ))}
             </div>
@@ -618,7 +659,7 @@ const App: React.FC = () => {
             <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center">
               <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 .6-.03 1.29-.1 2.09-.06.8-.15 1.43-.28 1.9-.13-.47-.29-.81-.48-1.01-.19-.2-.43-.32-.72-.36-.53-.08-1.5-.11-2.92-.11H6.5c-1.42 0-2.39-.03-2.92-.11-.29-.04-.53-.16-.72-.36-.19-.2-.35-.54-.48-1.01-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-.6.03-1.29.1-2.09.06-.8.15-1.43.28-.1.13-.47.29-.81.48-1.01.19-.2.43-.32.72-.36.53-.08 1.5-.11 2.92-.11h11c1.42 0 2.39.03 2.92.11.29.04.53.16.72.36.19.2.35.54.48 1.01z" /></svg>
             </div>
-            <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">TubeThumb Master Analytics v1.1.2</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-gray-600">TubeThumb Master Analytics v1.1.3</span>
           </div>
           <p className="text-[10px] font-bold text-gray-700 uppercase tracking-widest text-center">© 2026 YouTube Data Insights Engine - Một Sản Phẩm Phát Triển Bới NEPTUNE STUIDO.</p>
           <div className="flex items-center gap-6">

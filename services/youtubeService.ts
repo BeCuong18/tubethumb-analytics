@@ -1,5 +1,5 @@
 
-import { VideoData, SearchMode } from "../types";
+import { VideoData, SearchMode, SortBy } from "../types";
 
 // --- ID EXTRACTION HELPERS ---
 
@@ -72,7 +72,8 @@ export const fetchYouTubeVideos = async (
   maxResults: number = 100,
   days: number = 30,
   mode: SearchMode,
-  categoryId?: string
+  categoryId?: string,
+  sortBy: SortBy = SortBy.VIEWS
 ): Promise<VideoData[]> => {
   if (!apiKey) throw new Error("Vui lòng nhập YouTube API Key");
   const date = new Date();
@@ -89,14 +90,14 @@ export const fetchYouTubeVideos = async (
   let videoIdsToFetch: string[] = [];
   if (mode === SearchMode.KEYWORDS) {
     const searchQuery = tags.join('|');
-    videoIdsToFetch = await performSearch(apiKey, searchQuery, undefined, publishedAfter, regionCode, maxResults, categoryId);
+    videoIdsToFetch = await performSearch(apiKey, searchQuery, undefined, publishedAfter, regionCode, maxResults, categoryId, sortBy);
   } else if (mode === SearchMode.CHANNELS) {
     const channelIds = await resolveChannelIds(apiKey, tags);
     if (channelIds.length === 0) return [];
     const promises = channelIds.map(async (channelId) => {
       try {
         const resultsPerChannel = Math.max(5, Math.ceil(maxResults / channelIds.length));
-        return await performSearch(apiKey, "", channelId, publishedAfter, regionCode, resultsPerChannel, categoryId);
+        return await performSearch(apiKey, "", channelId, publishedAfter, regionCode, resultsPerChannel, categoryId, sortBy);
       } catch (e) {
         return [];
       }
@@ -126,6 +127,16 @@ export const fetchYouTubeVideos = async (
     return videoDate >= filterDate;
   });
 
+  if (sortBy === SortBy.VIEWS) {
+    return filteredVideos.sort((a, b) => (b.viewCountRaw || 0) - (a.viewCountRaw || 0));
+  } else if (sortBy === SortBy.DATE_DESC) {
+    return filteredVideos.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+  } else if (sortBy === SortBy.DATE_ASC) {
+    return filteredVideos.sort((a, b) => new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime());
+  } else if (sortBy === SortBy.VPH) {
+    return filteredVideos.sort((a, b) => (b.vph || 0) - (a.vph || 0));
+  }
+
   return filteredVideos.sort((a, b) => (b.viewCountRaw || 0) - (a.viewCountRaw || 0));
 };
 
@@ -136,7 +147,8 @@ const performSearch = async (
   publishedAfter: string,
   regionCode: string,
   limit: number,
-  categoryId?: string
+  categoryId?: string,
+  sortBy?: SortBy
 ): Promise<string[]> => {
   let allIds: string[] = [];
   let nextPageToken = '';
@@ -147,7 +159,7 @@ const performSearch = async (
     searchUrl.searchParams.append("part", "id");
     searchUrl.searchParams.append("maxResults", currentLimit.toString());
     searchUrl.searchParams.append("type", "video");
-    searchUrl.searchParams.append("order", "viewCount");
+    searchUrl.searchParams.append("order", sortBy === SortBy.DATE_DESC ? "date" : "viewCount");
     searchUrl.searchParams.append("publishedAfter", publishedAfter);
     if (regionCode && regionCode !== 'ALL') searchUrl.searchParams.append("regionCode", regionCode);
     if (query) searchUrl.searchParams.append("q", query);
@@ -214,6 +226,34 @@ export const fetchVideoDetails = async (apiKey: string, videoIds: string[]): Pro
     if (videosData.items) allVideoDetails = [...allVideoDetails, ...videosData.items];
   }
 
+  // Lấy subscriberCount cho các channel
+  const channelIds = [...new Set(allVideoDetails.map(item => item.snippet.channelId))];
+  const channelStats: Record<string, string> = {};
+
+  for (let i = 0; i < channelIds.length; i += chunkSize) {
+    const chunkIds = channelIds.slice(i, i + chunkSize).join(",");
+    if (!chunkIds) continue;
+    const channelsUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+    channelsUrl.searchParams.append("part", "statistics");
+    channelsUrl.searchParams.append("id", chunkIds);
+    channelsUrl.searchParams.append("key", apiKey);
+    try {
+      const channelsRes = await fetch(channelsUrl.toString());
+      if (channelsRes.ok) {
+        const channelsData = await channelsRes.json();
+        if (channelsData.items) {
+          channelsData.items.forEach((cItem: any) => {
+            channelStats[cItem.id] = cItem.statistics.subscriberCount;
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch channel stats", e);
+    }
+  }
+
+  const now = Date.now();
+
   return allVideoDetails.map((item: any) => {
     const snippet = item.snippet;
     const stats = item.statistics;
@@ -228,6 +268,16 @@ export const fetchVideoDetails = async (apiKey: string, videoIds: string[]): Pro
     const likes = parseInt(stats.likeCount || "0", 10);
     const comments = parseInt(stats.commentCount || "0", 10);
     const engagement = views > 0 ? (((likes + comments) / views) * 100).toFixed(2) : "0.00";
+
+    const publishedAt = new Date(snippet.publishedAt).getTime();
+    const hoursSincePublished = Math.max((now - publishedAt) / (1000 * 60 * 60), 1);
+    const vph = Math.round(views / hoursSincePublished);
+
+    let subCountFormatted = "N/A";
+    const subCountRaw = channelStats[snippet.channelId];
+    if (subCountRaw) {
+      subCountFormatted = formatNumber(subCountRaw);
+    }
 
     return {
       id: item.id,
@@ -259,7 +309,9 @@ export const fetchVideoDetails = async (apiKey: string, videoIds: string[]): Pro
       publicStatsViewable: status.publicStatsViewable,
       recordingLocation: recording.locationDescription || (recording.location ? `${recording.location.latitude}, ${recording.location.longitude}` : undefined),
       contentRating: item.contentDetails.contentRating,
-      license: status.license
+      license: status.license,
+      subscriberCount: subCountFormatted,
+      vph: vph
     };
   });
 };

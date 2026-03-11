@@ -103,6 +103,19 @@ export const fetchAssignedAiKey = async (email: string): Promise<string | null> 
     return null;
 };
 
+// Hàm mới lấy thời gian từ server (tránh client sửa giờ máy tính)
+export const getServerDate = async (): Promise<string> => {
+    try {
+        const response = await fetch('https://time.now/developer/api/timezone/Etc/UTC');
+        if (!response.ok) throw new Error("Could not fetch time");
+        const data = await response.json();
+        return data.datetime.split('T')[0];
+    } catch (error) {
+        console.error("Lỗi lấy thời gian từ server, dùng tạm fallback:", error);
+        return new Date().toISOString().split('T')[0];
+    }
+};
+
 // MỚI: Hàm kiểm tra giới hạn sử dụng trong ngày
 export const checkUsageLimit = async (email: string, limit: number): Promise<boolean> => {
     try {
@@ -111,7 +124,7 @@ export const checkUsageLimit = async (email: string, limit: number): Promise<boo
 
         if (accountSnap.exists()) {
             const data = accountSnap.data();
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const today = await getServerDate(); // Sử dụng Server Date thay cho local Date
 
             // Nếu là ngày mới, reset số lượt hoặc nếu chưa có thông tin thì cho phép
             if (!data.lastUsageDate || data.lastUsageDate !== today) {
@@ -140,7 +153,7 @@ export const incrementUsage = async (email: string): Promise<void> => {
 
         if (accountSnap.exists()) {
             const data = accountSnap.data();
-            const today = new Date().toISOString().split('T')[0];
+            const today = await getServerDate();
 
             let newUsage = 1;
             if (data.lastUsageDate === today) {
@@ -166,7 +179,7 @@ export const getUsageInfo = async (email: string, limit: number): Promise<{ used
 
         if (accountSnap.exists()) {
             const data = accountSnap.data();
-            const today = new Date().toISOString().split('T')[0];
+            const today = await getServerDate();
 
             if (!data.lastUsageDate || data.lastUsageDate !== today) {
                 return { used: 0, remaining: limit };

@@ -69,8 +69,13 @@ const ThumbnailCard: React.FC<ThumbnailCardProps> = ({ video, onShowAnalytics, o
       {/* Content */}
       <div className="p-4 flex flex-col flex-grow">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter truncate max-w-[150px]">{video.channelTitle}</span>
-          <span className="text-[10px] text-gray-600 font-mono">{new Date(video.publishedAt).toLocaleDateString()}</span>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter truncate max-w-[120px]" title={video.channelTitle}>{video.channelTitle}</span>
+            {video.subscriberCount && video.subscriberCount !== "N/A" && (
+              <span className="text-[9px] bg-[#222] text-gray-500 px-1.5 py-0.5 rounded font-bold whitespace-nowrap">{video.subscriberCount} sub</span>
+            )}
+          </div>
+          <span className="text-[10px] text-gray-600 font-mono shrink-0">{new Date(video.publishedAt).toLocaleDateString()}</span>
         </div>
 
         <h3
@@ -83,17 +88,26 @@ const ThumbnailCard: React.FC<ThumbnailCardProps> = ({ video, onShowAnalytics, o
 
         <div className="mt-auto space-y-3">
           {/* Stats Row */}
-          <div className="flex items-center justify-between text-[11px] text-gray-400 border-t border-[#333] pt-3">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1" title="Lượt xem">
-                <span className="text-gray-600">👁️</span>
-                <span className="font-bold">{video.viewCount}</span>
-              </div>
-              <div className="flex items-center gap-1" title="Tương tác">
-                <span className="text-gray-600">⚡</span>
-                <span className="text-purple-400 font-bold">{video.engagementRate}%</span>
-              </div>
+          <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400 border-t border-[#333] pt-3">
+            <div className="flex items-center gap-1" title="Lượt xem">
+              <span className="text-gray-600">👁️</span>
+              <span className="font-bold text-white">{video.viewCount}</span>
             </div>
+            {video.likeCount && video.likeCount !== '0' && (
+              <div className="flex items-center gap-1" title="Lượt thích">
+                <span className="text-gray-600">👍</span>
+                <span className="font-bold text-white">{video.likeCount}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1" title="Tương tác">
+              <span className="text-gray-600">⚡</span>
+              <span className="text-purple-400 font-bold">{video.engagementRate}%</span>
+            </div>
+            {video.vph !== undefined && video.vph > 0 && (
+              <div className="flex items-center gap-1 ml-auto" title="Lượt xem mỗi giờ (VPH)">
+                <span className="text-[9px] font-black bg-red-600/20 text-red-500 px-1.5 py-0.5 rounded border border-red-500/20 uppercase tracking-widest">{video.vph.toLocaleString('vi-VN')} vph</span>
+              </div>
+            )}
           </div>
 
           {/* Actions */}

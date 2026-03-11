@@ -127,8 +127,8 @@ export const analyzeKeywordSEO = async (
         lastError = error;
         aiData = null; // Đặt lại null để tiếp tục
         if (error.message.includes('429') || error.message.includes('Quota')) {
-          console.warn('API Key đạt giới hạn, chuyển sang Key khác...');
-          break; // Thoát vòng Model, qua vòng lặp Key tiếp theo
+          console.warn('API Key đạt giới hạn, thử model cùi hơn...');
+          continue; // Thử model tiếp theo, nếu hết model thì vòng lặp ngoài sẽ tự qua Key tiếp theo
         }
       }
     }
@@ -183,7 +183,7 @@ export const analyzeSeoStrategy = async (apiKeys: string[], videos: VideoData[],
       } catch (e: any) {
         console.warn(`[SEO Strategy] Model ${currentModel} failed: ${e.message}`);
         lastError = e;
-        if (e.message.includes('429') || e.message.includes('Quota')) break;
+        if (e.message.includes('429') || e.message.includes('Quota')) continue;
       }
     }
   }
@@ -238,7 +238,7 @@ export const analyzeThumbnailPatterns = async (apiKeys: string[], videos: VideoD
       } catch (e: any) {
         console.warn(`[Thumbnail Patterns] Model ${currentModel} failed: ${e.message}`);
         lastError = e;
-        if (e.message.includes('429') || e.message.includes('Quota')) break;
+        if (e.message.includes('429') || e.message.includes('Quota')) continue;
       }
     }
   }
@@ -262,7 +262,7 @@ export const analyzeChannelStrategy = async (apiKeys: string[], videos: VideoDat
       } catch (e: any) {
         console.warn(`[Channel Strategy] Model ${currentModel} failed: ${e.message}`);
         lastError = e;
-        if (e.message.includes('429') || e.message.includes('Quota')) break;
+        if (e.message.includes('429') || e.message.includes('Quota')) continue;
       }
     }
   }
@@ -272,7 +272,9 @@ export const analyzeChannelStrategy = async (apiKeys: string[], videos: VideoDat
 export const generateThumbnailVisual = async (apiKey: string, video: VideoData, suggestion: any, fullAnalysis: any): Promise<{ imagePrompt: string, imageUrl: string }> => {
   console.log("DEBUG: Starting generateThumbnailVisual with Pollinations FLUX");
 
-  let imagePrompt = suggestion.imagePrompt || `High quality 4k youtube thumbnail, photorealistic, ${suggestion.background}, ${suggestion.textOverlay}`;
+  let basePrompt = suggestion.imagePrompt || `High quality 4k youtube thumbnail, photorealistic, ${suggestion.background}`;
+  let textInstruction = suggestion.textOverlay ? `, featuring typography text overlay: ${suggestion.textOverlay}` : "";
+  let imagePrompt = `${basePrompt}${textInstruction}`;
 
   try {
     console.log("DEBUG: Using Pre-generated Image Prompt:", imagePrompt);
@@ -342,21 +344,21 @@ export const analyzeSingleVideoAnalytics = async (apiKeys: string[], video: Vide
                       "background": "string (Mô tả background)",
                       "textOverlay": "string (Text trên ảnh)",
                       "layoutExample": "string (Mô tả bố cục)",
-                      "imagePrompt": "string (BẮT BUỘC Tiếng Anh, max 500 ký tự. Prompt để AI vẽ ảnh 3D/Photorealistic chi tiết về bối cảnh, nhân vật, màu sắc, high quality, 4k)"
+                      "imagePrompt": "string (BẮT BUỘC Tiếng Anh, max 500 ký tự. Prompt để AI vẽ ảnh tĩnh, 4k. NẾU CÓ TEXT OVERLAY, PHẢI chỉ định chữ cần hiển thị đặt CHÍNH XÁC trong ngoặc kép \"\", các mô tả về font/màu sắc để ngoài ngoặc kép)"
                     },
                     {
                       "styleName": "string (Phong cách 2)",
                       "background": "string",
                       "textOverlay": "string",
                       "layoutExample": "string",
-                      "imagePrompt": "string (Tiếng Anh, max 500 ký tự)"
+                      "imagePrompt": "string (Tiếng Anh, max 500 ký tự. Chữ đặt trong \"\", mô tả để ngoài)"
                     },
                     {
                       "styleName": "string (Phong cách 3)",
                       "background": "string",
                       "textOverlay": "string",
                       "layoutExample": "string",
-                      "imagePrompt": "string (Tiếng Anh, max 500 ký tự)"
+                      "imagePrompt": "string (Tiếng Anh, max 500 ký tự. Chữ đặt trong \"\", mô tả để ngoài)"
                     }
                   ]
     },
@@ -401,7 +403,7 @@ export const analyzeSingleVideoAnalytics = async (apiKeys: string[], video: Vide
       } catch (error: any) {
         console.warn(`[Single Video Analytics] Fallback ${currentModel} failed: ${error.message}`);
         lastError = error;
-        if (error.message.includes('429') || error.message.includes('Quota')) break;
+        if (error.message.includes('429') || error.message.includes('Quota')) continue;
       }
     }
   }

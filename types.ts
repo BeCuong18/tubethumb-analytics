@@ -30,6 +30,15 @@ export interface VideoData {
   recordingLocation?: string;
   contentRating?: any;
   license?: string;
+  subscriberCount?: string;
+  vph?: number;
+}
+
+export enum SortBy {
+  VIEWS = 'VIEWS',
+  DATE_DESC = 'DATE_DESC',
+  DATE_ASC = 'DATE_ASC',
+  VPH = 'VPH'
 }
 
 export interface RisingKeyword {
