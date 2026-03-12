@@ -1,6 +1,6 @@
 import { saveAccountInfo } from './firebaseService';
 
-export const API_URL = import.meta.env.VITE_API_URL || 'https://api.dashboard.yteco.live';
+export const API_URL = import.meta.env.VITE_API_URL;
 
 // Helpers
 const setStoredToken = (token: string) => localStorage.setItem('access_token', token);
