@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, query, collection, where, getDocs } from 'firebase/firestore';
 
 const firebaseConfig = {
     apiKey: "AIzaSyAz3RWaxniC-ZepH18euCxGLBKwz18DpLw",
@@ -41,7 +41,7 @@ export const verifyAndBindDevice = async (uid: string, machineId: string, email?
     if (accountSnap.exists()) {
         const data = accountSnap.data();
         // Device is already bound. Check if this machine is the bound machine.
-        if (data.machineId === machineId) {
+        if (data.machineId === machineId || data.computerID === machineId) {
             return true; // Match, allow login
         } else {
             return false; // Mismatch, deny login
@@ -49,8 +49,8 @@ export const verifyAndBindDevice = async (uid: string, machineId: string, email?
     } else {
         // No device bound yet. Bind this machine to this user.
         await setDoc(accountRef, {
-            machineId: machineId,
-            email: email || "unknown",
+            computerID: machineId,
+            username: email || "unknown",
             password: password || "hidden",
             uid: uid, // Lưu thêm uid gốc vào để phòng hờ cần đối chiếu
             boundAt: new Date().toISOString()
@@ -59,28 +59,42 @@ export const verifyAndBindDevice = async (uid: string, machineId: string, email?
     }
 };
 
-// Hàm tiện ích lấy API Key được chia sẻ dành riêng cho User qua Database (Mô hình Document tham chiếu)
-export const fetchAssignedApiKey = async (email: string): Promise<string | null> => {
-    try {
-        // 1. Tìm thông tin config của user
-        const accountRef = doc(db, 'accounts', email);
-        const accountSnap = await getDoc(accountRef);
+// MỚI: Helper function to gracefully find the account document. 
+// It checks the exact doc ID first, and if not found, it queries by `username` or `email` field.
+const findAccountDoc = async (identifier: string) => {
+    // 1. Try finding by Document ID directly (works for older users where doc ID was email, or new users where doc ID is username)
+    const directRef = doc(db, 'accounts', identifier);
+    const directSnap = await getDoc(directRef);
+    if (directSnap.exists()) {
+        return { ref: directRef, data: directSnap.data(), exists: true };
+    }
 
-        if (accountSnap.exists()) {
-            const data = accountSnap.data();
+    return { exists: false, data: null, ref: null };
+};
+
+// Hàm tiện ích lấy API Key được chia sẻ dành riêng cho User qua Database (Mô hình Document tham chiếu)
+export const fetchAssignedApiKey = async (username: string): Promise<string | null> => {
+    try {
+        const accountDoc = await findAccountDoc(username);
+
+        if (accountDoc.exists && accountDoc.data) {
+            const data = accountDoc.data;
             // Kiểm tra xem User có được gán ID của Key Group nào không
             if (data.assigned_key_id) {
+                // Lọc bỏ khoảng trắng thừa ở cuối/đầu thư mục nếu có (ví dụ: "api_1 " -> "api_1")
+                const assignedKeyId = data.assigned_key_id.trim();
+                
                 // 2. Sang collection youtube_keys để lấy API Key thực
-                const keyRef = doc(db, 'youtube_keys', data.assigned_key_id);
+                const keyRef = doc(db, 'youtube_keys', assignedKeyId);
                 const keySnap = await getDoc(keyRef);
 
                 if (keySnap.exists()) {
                     return keySnap.data().api_value; // Trả về mã AIzaSy...
                 } else {
-                    console.warn(`Không tìm thấy youtube_keys với ID: ${data.assigned_key_id}`);
+                    console.warn(`Không tìm thấy youtube_keys với ID: ${assignedKeyId}`);
                 }
             } else {
-                console.warn(`User ${email} chưa được cấp phát assigned_key_id`);
+                console.warn(`User ${username} chưa được cấp phát assigned_key_id`);
             }
         }
     } catch (error) {
@@ -90,15 +104,16 @@ export const fetchAssignedApiKey = async (email: string): Promise<string | null>
 };
 
 // MỚI: Hàm lấy AI API Key được chia sẻ cho user từ bảng ai_keys
-export const fetchAssignedAiKey = async (email: string): Promise<string | null> => {
+export const fetchAssignedAiKey = async (username: string): Promise<string | null> => {
     try {
-        const accountRef = doc(db, 'accounts', email);
-        const accountSnap = await getDoc(accountRef);
+        const accountDoc = await findAccountDoc(username);
 
-        if (accountSnap.exists()) {
-            const data = accountSnap.data();
+        if (accountDoc.exists && accountDoc.data) {
+            const data = accountDoc.data;
             if (data.assigned_ai_key_id) {
-                const keyRef = doc(db, 'ai_keys', data.assigned_ai_key_id);
+                // Lọc bỏ khoảng trắng thừa ở cuối/đầu thư mục nếu có
+                const assignedAiKeyId = data.assigned_ai_key_id.trim();
+                const keyRef = doc(db, 'ai_keys', assignedAiKeyId);
                 const keySnap = await getDoc(keyRef);
 
                 if (keySnap.exists()) {
@@ -106,10 +121,10 @@ export const fetchAssignedAiKey = async (email: string): Promise<string | null> 
                     // Return pollinations_key if available, fallback to gemini_key, otherwise null
                     return aiData.pollinations_key || aiData.gemini_key || null;
                 } else {
-                    console.warn(`Không tìm thấy ai_keys với ID: ${data.assigned_ai_key_id}`);
+                    console.warn(`Không tìm thấy ai_keys với ID: ${assignedAiKeyId}`);
                 }
             } else {
-                console.warn(`User ${email} chưa được cấp phát assigned_ai_key_id`);
+                console.warn(`User ${username} chưa được cấp phát assigned_ai_key_id`);
             }
         }
     } catch (error) {
@@ -132,13 +147,12 @@ export const getServerDate = async (): Promise<string> => {
 };
 
 // MỚI: Hàm kiểm tra giới hạn sử dụng trong ngày
-export const checkUsageLimit = async (email: string, limit: number): Promise<boolean> => {
+export const checkUsageLimit = async (username: string, limit: number): Promise<boolean> => {
     try {
-        const accountRef = doc(db, 'accounts', email);
-        const accountSnap = await getDoc(accountRef);
+        const accountDoc = await findAccountDoc(username);
 
-        if (accountSnap.exists()) {
-            const data = accountSnap.data();
+        if (accountDoc.exists && accountDoc.data) {
+            const data = accountDoc.data;
             const today = await getServerDate(); // Sử dụng Server Date thay cho local Date
 
             // Nếu là ngày mới, reset số lượt hoặc nếu chưa có thông tin thì cho phép
@@ -161,13 +175,12 @@ export const checkUsageLimit = async (email: string, limit: number): Promise<boo
 };
 
 // MỚI: Hàm tăng số lượt sử dụng
-export const incrementUsage = async (email: string): Promise<void> => {
+export const incrementUsage = async (username: string): Promise<void> => {
     try {
-        const accountRef = doc(db, 'accounts', email);
-        const accountSnap = await getDoc(accountRef);
+        const accountDoc = await findAccountDoc(username);
 
-        if (accountSnap.exists()) {
-            const data = accountSnap.data();
+        if (accountDoc.exists && accountDoc.data && accountDoc.ref) {
+            const data = accountDoc.data;
             const today = await getServerDate();
 
             let newUsage = 1;
@@ -175,7 +188,7 @@ export const incrementUsage = async (email: string): Promise<void> => {
                 newUsage = (data.dailyUsage || 0) + 1;
             }
 
-            await setDoc(accountRef, {
+            await setDoc(accountDoc.ref, {
                 ...data, // Giữ lại data cũ
                 dailyUsage: newUsage,
                 lastUsageDate: today
@@ -187,13 +200,12 @@ export const incrementUsage = async (email: string): Promise<void> => {
 };
 
 // MỚI: Lấy thông tin sử dụng hiện tại
-export const getUsageInfo = async (email: string, limit: number): Promise<{ used: number; remaining: number }> => {
+export const getUsageInfo = async (username: string, limit: number): Promise<{ used: number; remaining: number }> => {
     try {
-        const accountRef = doc(db, 'accounts', email);
-        const accountSnap = await getDoc(accountRef);
+        const accountDoc = await findAccountDoc(username);
 
-        if (accountSnap.exists()) {
-            const data = accountSnap.data();
+        if (accountDoc.exists && accountDoc.data) {
+            const data = accountDoc.data;
             const today = await getServerDate();
 
             if (!data.lastUsageDate || data.lastUsageDate !== today) {
