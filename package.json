@@ -39,6 +39,7 @@
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
     "firebase": "^12.9.0",
+    "keycloak-js": "^26.2.3",
     "node-machine-id": "^1.1.12",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"

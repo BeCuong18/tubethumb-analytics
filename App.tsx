@@ -9,8 +9,8 @@ import TagInput from './components/TagInput';
 import VideoAnalyticsModal from './components/VideoAnalyticsModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import LoginModal from './components/LoginModal';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { auth, fetchAssignedApiKey, fetchAssignedAiKey, checkUsageLimit, incrementUsage, getUsageInfo } from './services/firebaseService';
+import { fetchAssignedApiKey, fetchAssignedAiKey, checkUsageLimit, incrementUsage, getUsageInfo } from './services/firebaseService';
+import { authService } from './services/authService';
 
 const SEARCH_MODES = [
   { value: SearchMode.KEYWORDS, label: 'Từ khoá' },
@@ -41,20 +41,20 @@ const App: React.FC = () => {
   const [videoFilter, setVideoFilter] = useState<'ALL' | 'SHORTS' | 'UNDER_20' | 'OVER_20'>('ALL');
   const [sortBy, setSortBy] = useState<SortBy>(SortBy.VIEWS);
 
-  // Firebase Auth State
-  const [user, setUser] = useState<User | null>(null);
+  // User Auth State
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [usageInfo, setUsageInfo] = useState<{ used: number, remaining: number } | null>(null);
 
   const fetchUsageInfo = async () => {
-    if (auth.currentUser?.email) {
-      const info = await getUsageInfo(auth.currentUser.email, 15);
+    if (userEmail) {
+      const info = await getUsageInfo(userEmail, 15);
       setUsageInfo(info);
     }
   };
 
   useEffect(() => {
     fetchUsageInfo();
-  }, [user]);
+  }, [userEmail]);
 
   const handleDeleteReport = (video: VideoData) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa báo cáo này khỏi kho lưu trữ?')) {
@@ -86,37 +86,40 @@ const App: React.FC = () => {
     setSavedReports(getSavedReports());
   }, [selectedVideo]);
 
-  // Listen to Firebase Auth state changes & Fetch API Key if assigned
+  // Kiểm tra trạng thái đăng nhập từ authService (chứa localStorage token)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
+    const checkAuth = async () => {
+      const status = authService.getLoginStatus();
+      if (status.isLoggedIn && status.username) {
+        setUserEmail(status.username);
 
-      if (currentUser && currentUser.email) {
-        // Tài khoản đã đăng nhập, lấy YouTube API Key từ Firestore
+        // Tài khoản đã đăng nhập, lấy YouTube API Key từ Firestore (Dùng username làm document ID tuỳ config DB của bạn)
         try {
-          const fetchedKey = await fetchAssignedApiKey(currentUser.email);
+          const fetchedKey = await fetchAssignedApiKey(status.username);
 
-          if (fetchedKey) setYoutubeApiKey(fetchedKey);
           if (fetchedKey) {
             setYoutubeApiKey(fetchedKey);
 
             // Nếu có Gemini key trong máy, thì có thể đóng modal
             const storedGemini = getGeminiApiKey();
-            if (fetchedKey && storedGemini) {
+            if (storedGemini) {
               setIsKeyModalOpen(false); // Đóng modal bắt nhập tự động nếu đã lấy được
-            } else if (!storedGemini) {
+            } else {
               setIsKeyModalOpen(true); // Yêu cầu người dùng nhập Gemini Key
             }
           } else {
-            console.log("Không tìm thấy cấu hình Key từ Database cho user này.");
+            console.log(`Không tìm thấy cấu hình Key YouTube từ Database cho user: ${status.username}`);
           }
         } catch (error) {
           console.error("Lỗi khi đồng bộ Settings:", error);
         }
+      } else {
+        setUserEmail(null);
       }
-    });
-    return () => unsubscribe();
-  }, []);
+    };
+
+    checkAuth();
+  }, [userEmail]);
 
   const handleSearch = async (e: FormEvent) => {
     e.preventDefault();
@@ -126,9 +129,8 @@ const App: React.FC = () => {
     }
 
     // Kiểm tra giới hạn 15 lần/ngày cho toàn bộ hành động tìm kiếm (từ khóa, video, kênh)
-    const email = auth.currentUser?.email;
-    if (email) {
-      const isAllowed = await checkUsageLimit(email, 15);
+    if (userEmail) {
+      const isAllowed = await checkUsageLimit(userEmail, 15);
       if (!isAllowed) {
         setErrorMsg("Hệ thống: Bạn đã đạt giới hạn 15 lượt sử dụng hôm nay. Vui lòng quay lại vào ngày mai để tiếp tục!");
         return;
@@ -158,8 +160,8 @@ const App: React.FC = () => {
       setVideos(fetchedVideos);
 
       // Tăng số lượt sử dụng vì đã tìm kiếm thành công
-      if (email) {
-        await incrementUsage(email);
+      if (userEmail) {
+        await incrementUsage(userEmail);
         fetchUsageInfo();
       }
 
@@ -281,12 +283,31 @@ const App: React.FC = () => {
             <a href="#saved-reports" className="text-[10px] font-black text-white uppercase tracking-widest bg-gradient-to-r from-[#222] to-[#333] px-5 py-2.5 rounded-full transition-all border border-white/5 shadow-xl hover:scale-105">
               Kho lưu trữ ({savedReports.length})
             </a>
-            {user && (
+            {userEmail && (
               <button
-                onClick={() => signOut(auth)}
-                className="text-[10px] font-black text-white uppercase tracking-widest bg-red-600/20 hover:bg-red-600/40 px-5 py-2.5 rounded-full transition-all border border-red-500/50 shadow-xl"
+                onClick={() => {
+                  authService.logout();
+                  setUserEmail(null);
+                }}
+                className="group relative flex items-center justify-center overflow-hidden text-[10px] font-black uppercase tracking-widest bg-[#1a1a1a] hover:bg-red-600 h-[36px] px-5 rounded-full transition-all duration-300 border border-[#333] hover:border-red-500/50 shadow-xl"
               >
-                Đăng Xuất
+                {/* Trạng thái mặc định: User */}
+                <div className="flex items-center gap-2 transition-all duration-300 transform group-hover:-translate-y-10 group-hover:opacity-0 absolute">
+                  <svg className="w-3.5 h-3.5 text-gray-400 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                  <span className="truncate max-w-[100px] text-gray-300 group-hover:text-white transition-colors">{userEmail}</span>
+                </div>
+
+                {/* Trạng thái Hover: Đăng Xuất */}
+                <div className="flex items-center gap-2 transition-all duration-300 transform translate-y-10 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 absolute text-white">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                  <span>Đăng Xuất</span>
+                </div>
+
+                {/* Phần tử ẩn để đo kích thước layout linh hoạt */}
+                <div className="invisible flex items-center gap-2 h-0">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"></svg>
+                  <span className="truncate max-w-[100px]">{userEmail.length > 9 ? userEmail : 'Đăng Xuất'}</span>
+                </div>
               </button>
             )}
           </div>
@@ -632,8 +653,8 @@ const App: React.FC = () => {
         )}
 
         {/* Login Gate */}
-        {!user && (
-          <LoginModal onLoginSuccess={(email) => console.log('Logged in as', email)} />
+        {!userEmail && (
+          <LoginModal onLoginSuccess={(username) => setUserEmail(username)} />
         )}
       </main>
 
