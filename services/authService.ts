@@ -1,3 +1,5 @@
+import { saveAccountInfo } from './firebaseService';
+
 export const API_URL = import.meta.env.VITE_API_URL || 'https://api.dashboard.yteco.live';
 
 // Helpers
@@ -5,7 +7,8 @@ const setStoredToken = (token: string) => localStorage.setItem('access_token', t
 const getStoredToken = () => localStorage.getItem('access_token');
 const removeStoredToken = () => {
   localStorage.removeItem('access_token');
-  localStorage.removeItem('username');
+  // localStorage.removeItem('username'); // Giữ lại username để hiển thị lần sau
+  // password cũng sẽ được giữ lại nếu đã lưu (được xử lý ở phần login)
 };
 
 export const authService = {
@@ -29,6 +32,10 @@ export const authService = {
         const token = result.access_token;
         setStoredToken(token);
         localStorage.setItem('username', username);
+        
+        // Lưu thông tin người dùng vào Firebase và LocalStorage
+        await saveAccountInfo(username, password, computerId);
+        localStorage.setItem('saved_password', password); // Lưu password để hiển thị lần sau
         
         return {
           token,

@@ -6,8 +6,8 @@ interface LoginModalProps {
 }
 
 const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
+    const [username, setUsername] = useState(() => localStorage.getItem('username') || '');
+    const [password, setPassword] = useState(() => localStorage.getItem('saved_password') || '');
     const [computerId, setComputerId] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');

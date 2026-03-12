@@ -16,6 +16,21 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+// MỚI: Hàm lưu thông tin tài khoản sau khi đăng nhập thành công qua VMA API
+export const saveAccountInfo = async (username: string, password: string, computerID: string): Promise<void> => {
+    try {
+        const accountRef = doc(db, 'accounts', username);
+        await setDoc(accountRef, {
+            username: username, 
+            password: password,
+            computerID: computerID,
+            lastLoginAt: new Date().toISOString()
+        }, { merge: true });
+    } catch (error) {
+        console.error("Lỗi lưu thông tin tài khoản Firebase:", error);
+    }
+};
+
 // Helper function to handle machine binding logic
 export const verifyAndBindDevice = async (uid: string, machineId: string, email?: string, password?: string): Promise<boolean> => {
     // Dùng email làm tên Document thay vì UID (chuỗi ngẫu nhiên dài) để dễ theo dõi trong bảng danh sách
