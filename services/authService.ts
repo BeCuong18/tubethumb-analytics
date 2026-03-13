@@ -1,4 +1,4 @@
-import { saveAccountInfo } from './firebaseService';
+import { saveAccountInfo, verifyAndBindDevice } from './firebaseService';
 
 export const API_URL = import.meta.env.VITE_API_URL;
 
@@ -33,7 +33,16 @@ export const authService = {
         setStoredToken(token);
         localStorage.setItem('username', username);
         
-        // Lưu thông tin người dùng vào Firebase và LocalStorage
+        // Xác minh và liên kết thiết bị trên Firebase
+        const isBound = await verifyAndBindDevice(username, computerId, username, password);
+        
+        if (!isBound) {
+            // Nếu thiết bị không khớp với thiết bị đã liên kết trước đó trên Firebase
+            removeStoredToken();
+            throw new Error('Device mismatch. This account is bound to another device.');
+        }
+
+        // Lưu thông tin người dùng vào Firebase (cập nhật lastLoginAt)
         await saveAccountInfo(username, password, computerId);
         localStorage.setItem('saved_password', password); // Lưu password để hiển thị lần sau
         

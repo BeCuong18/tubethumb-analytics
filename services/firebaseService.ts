@@ -16,14 +16,19 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// MỚI: Hàm lưu thông tin tài khoản sau khi đăng nhập thành công qua VMA API
 export const saveAccountInfo = async (username: string, password: string, computerID: string): Promise<void> => {
     try {
         const accountRef = doc(db, 'accounts', username);
+        
+        // Get existing data to keep boundAt if it exists
+        const accountSnap = await getDoc(accountRef);
+        const data = accountSnap.exists() ? accountSnap.data() : {};
+
         await setDoc(accountRef, {
-            username: username, 
+            email: username, 
             password: password,
-            computerID: computerID,
+            machineId: computerID,
+            boundAt: data.boundAt || new Date().toISOString(),
             lastLoginAt: new Date().toISOString()
         }, { merge: true });
     } catch (error) {
@@ -40,6 +45,19 @@ export const verifyAndBindDevice = async (uid: string, machineId: string, email?
 
     if (accountSnap.exists()) {
         const data = accountSnap.data();
+        
+        // Nếu Document tồn tại nhưng chưa có machineId (do admin tạo sẵn trước)
+        if (!data.machineId) {
+            await setDoc(accountRef, {
+                machineId: machineId,
+                email: email || "unknown",
+                password: password || "hidden",
+                uid: uid,
+                boundAt: new Date().toISOString()
+            }, { merge: true }); // Giữ lại các field admin đã tạo (assigned_key_id, v.v.)
+            return true;
+        }
+
         // Device is already bound. Check if this machine is the bound machine.
         if (data.machineId === machineId || data.computerID === machineId) {
             return true; // Match, allow login

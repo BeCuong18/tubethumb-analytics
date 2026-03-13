@@ -31,7 +31,11 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
             }
         } catch (err: any) {
             console.error('Login API error', err);
-            setError('Tài khoản, mật khẩu định danh không chính xác hoặc lỗi mạng.');
+            if (err.message === 'Device mismatch. This account is bound to another device.') {
+                setError('Thiết bị không khớp. Tài khoản này đã định danh trên một thiết bị khác.');
+            } else {
+                setError('Tài khoản, mật khẩu định danh không chính xác hoặc lỗi mạng.');
+            }
         } finally {
             setLoading(false);
         }

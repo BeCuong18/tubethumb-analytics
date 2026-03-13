@@ -1,6 +1,6 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { VideoData, SeoAnalysisResult, ThumbnailAnalysisResult, ChannelAnalysisResult, SingleVideoAnalysis, KeywordAnalysisResult, KeywordAnalysisSource } from "../types";
+import { VideoData, SeoAnalysisResult, ThumbnailAnalysisResult, ChannelAnalysisResult, SingleVideoAnalysis, KeywordAnalysisResult, KeywordAnalysisSource, CustomThumbnailEvaluation } from "../types";
 
 // Helper to fetch image as inline data for Gemini Vision
 const urlToGenerativePart = async (url: string) => {
@@ -409,4 +409,72 @@ export const analyzeSingleVideoAnalytics = async (apiKeys: string[], video: Vide
   }
 
   throw new Error(`Lỗi khối phân tích toàn cục: Tất cả models đều thất bại. Chi tiết: ${lastError?.message}`);
+};
+
+export const evaluateCustomThumbnail = async (apiKeys: string[], imageBase64: string, mimeType: string, modelId: string): Promise<CustomThumbnailEvaluation> => {
+  const prompt = `Bạn là một chuyên gia phân tích Thumbnail YouTube Master, am hiểu sâu sắc về tâm lý học người xem, thiết kế UI/UX và thuật toán đề xuất của YouTube.
+Nhiệm vụ của bạn là phân tích và CHẤM ĐIỂM bức ảnh thumbnail được tải lên.
+
+YẾU CẦU ĐÁNH GIÁ CHUYÊN SÂU:
+1. Sức hút thị giác (Visual attention): Ước tính phần trăm (%) sự chú ý mà mắt người xem sẽ tập trung vào từng thành tố (Khuôn mặt, Chữ, Nền, Khác). Tổng phải là 100%.
+2. Điểm "Dừng Lướt" (Stop Scrolling Score / 100): Đánh giá khả năng khiến người xem ngừng lướt trên điện thoại (độ tương phản, độ nét, yếu tố giật gân/bất ngờ).
+3. Độ đọc trên Mobile: Kích thước chữ và chủ thể có dễ nhận diện trên màn hình nhỏ hay không.
+4. Tỉ lệ cạnh tranh / Tính độc đáo (Competitiveness / 100): Mức độ nổi bật của thumbnail so với các video đại trà.
+5. Phân tích chi tiết: Bố cục, Màu sắc, Typography, Cảm xúc.
+
+YÊU CẦU OUTPUT LÀ JSON (không có markdown code block, 100% tiếng Việt):
+{
+  "overallScore": number (thang 100),
+  "competitiveness": number (thang 100),
+  "stopScrollingScore": number (thang 100),
+  "mobileReadability": "Tốt" | "Trung bình" | "Kém",
+  "visualAttention": {
+    "faces": number,
+    "text": number,
+    "background": number,
+    "otherElements": number
+  },
+  "analysis": {
+    "overall": "string (Nhận xét chung, sức nặng của thumbnail)",
+    "composition": "string (Phân tích bố cục, rule of thirds, hướng mắt)",
+    "colorContrast": "string (Tương phản màu sắc, độ nổi khối)",
+    "typography": "string (Phân tích font, kích thước, số lượng từ)",
+    "emotionalImpact": "string (Cảm xúc khuôn mặt, ấn tượng đầu tiên)",
+    "mobileView": "string (Mức độ hiệu quả trên thiết bị di động)",
+    "uniqueness": "string (Khả năng khác biệt so với thị trường)"
+  },
+  "strengths": ["string", "string"],
+  "weaknesses": ["string", "string"],
+  "improvementSuggestions": ["string (Cụ thể, có thể thực hành được)", "string"]
+}`;
+
+  const imagePart = {
+    inlineData: {
+      data: imageBase64,
+      mimeType: mimeType || "image/jpeg",
+    },
+  };
+
+  const fallbacks = [modelId || "gemini-3-flash-preview", "gemini-2.5-flash-lite", "gemini-2.5-flash"].filter((v, i, a) => a.indexOf(v) === i);
+  let lastError;
+
+  for (const key of apiKeys) {
+    if (!key.trim()) continue;
+    const genAI = new GoogleGenerativeAI(key);
+    for (const currentModel of fallbacks) {
+      try {
+        console.log(`[Custom Thumbnail Evaluation] Thử model: ${currentModel}...`);
+        const model = genAI.getGenerativeModel({ model: currentModel, generationConfig: { responseMimeType: "application/json" } });
+        const result = await model.generateContent([prompt, imagePart]);
+        const text = result.response.text();
+        return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim()) as CustomThumbnailEvaluation;
+      } catch (error: any) {
+        console.warn(`[Custom Thumbnail Evaluation] Fallback ${currentModel} failed: ${error.message}`);
+        lastError = error;
+        if (error.message.includes('429') || error.message.includes('Quota')) continue;
+      }
+    }
+  }
+
+  throw new Error(`Lỗi đánh giá Thumbnail: Tất cả models đều thất bại. Chi tiết: ${lastError?.message}`);
 };

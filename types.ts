@@ -117,6 +117,31 @@ export interface ThumbnailAnalysisResult {
   }[];
 }
 
+export interface CustomThumbnailEvaluation {
+  overallScore: number;
+  competitiveness: number;
+  stopScrollingScore: number;
+  mobileReadability: 'Tốt' | 'Trung bình' | 'Kém';
+  visualAttention: {
+    faces: number;
+    text: number;
+    background: number;
+    otherElements: number;
+  };
+  analysis: {
+    overall: string;
+    composition: string;
+    colorContrast: string;
+    typography: string;
+    emotionalImpact: string;
+    mobileView: string;
+    uniqueness: string;
+  };
+  strengths: string[];
+  weaknesses: string[];
+  improvementSuggestions: string[];
+}
+
 export interface ChannelAnalysisResult {
   channelStrengths: string;
   channelWeaknesses: string;
