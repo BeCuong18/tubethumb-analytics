@@ -239,3 +239,22 @@ export const getUsageInfo = async (username: string, limit: number): Promise<{ u
         return { used: 0, remaining: 0 };
     }
 };
+
+// MỚI: Hàm ghi nhận lịch sử tìm kiếm từ khoá của người dùng
+export const logUserSearch = async (username: string, keyword: string, searchType: string = 'KEYWORDS'): Promise<void> => {
+    try {
+        if (!keyword || !keyword.trim()) return;
+        
+        const timestamp = new Date().toISOString();
+        const searchDocRef = doc(collection(db, 'search_logs'));
+        
+        await setDoc(searchDocRef, {
+            username: username,
+            keyword: keyword.trim().toLowerCase(),
+            searchType: searchType, // VD: KEYWORDS, CHANNELS, VIDEO_IDS, PLAYLIST
+            timestamp: timestamp
+        });
+    } catch (error) {
+        console.error("Lỗi ghi nhận lịch sử tìm kiếm:", error);
+    }
+};

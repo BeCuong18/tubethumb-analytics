@@ -37,7 +37,7 @@ export const extractChannelIdentifier = (input: string): { type: 'ID' | 'HANDLE'
   return { type: 'UNKNOWN', value: input };
 };
 
-const resolveChannelIds = async (apiKey: string, inputs: string[]): Promise<string[]> => {
+const resolveChannelIds = async (apiKey: string, inputs: string[], regionCode?: string): Promise<string[]> => {
   const resolvedIds: string[] = [];
   for (const input of inputs) {
     const { type, value } = extractChannelIdentifier(input);
@@ -50,6 +50,7 @@ const resolveChannelIds = async (apiKey: string, inputs: string[]): Promise<stri
         searchUrl.searchParams.append("type", "channel");
         searchUrl.searchParams.append("q", value);
         searchUrl.searchParams.append("maxResults", "1");
+        if (regionCode && regionCode !== 'ALL') searchUrl.searchParams.append("regionCode", regionCode);
         searchUrl.searchParams.append("key", apiKey);
         const res = await fetch(searchUrl.toString());
         const data = await res.json();
@@ -92,7 +93,7 @@ export const fetchYouTubeVideos = async (
     const searchQuery = tags.join('|');
     videoIdsToFetch = await performSearch(apiKey, searchQuery, undefined, publishedAfter, regionCode, maxResults, categoryId, sortBy);
   } else if (mode === SearchMode.CHANNELS) {
-    const channelIds = await resolveChannelIds(apiKey, tags);
+    const channelIds = await resolveChannelIds(apiKey, tags, regionCode);
     if (channelIds.length === 0) return [];
     const promises = channelIds.map(async (channelId) => {
       try {
@@ -120,7 +121,7 @@ export const fetchYouTubeVideos = async (
     videoIdsToFetch = videoIdsToFetch.slice(0, maxResults);
   }
 
-  const videoDetails = await fetchVideoDetails(apiKey, videoIdsToFetch);
+  const videoDetails = await fetchVideoDetails(apiKey, videoIdsToFetch, regionCode);
   const filteredVideos = videoDetails.filter(video => {
     const videoDate = new Date(video.publishedAt);
     const filterDate = new Date(publishedAfter);
@@ -210,7 +211,7 @@ const fetchPlaylistItems = async (apiKey: string, playlistId: string, limit: num
   return allIds;
 };
 
-export const fetchVideoDetails = async (apiKey: string, videoIds: string[]): Promise<VideoData[]> => {
+export const fetchVideoDetails = async (apiKey: string, videoIds: string[], regionCode?: string): Promise<VideoData[]> => {
   const chunkSize = 50;
   let allVideoDetails: any[] = [];
   for (let i = 0; i < videoIds.length; i += chunkSize) {
@@ -219,6 +220,7 @@ export const fetchVideoDetails = async (apiKey: string, videoIds: string[]): Pro
     const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
     videosUrl.searchParams.append("part", "snippet,statistics,contentDetails,topicDetails,status,recordingDetails");
     videosUrl.searchParams.append("id", chunkIds);
+    if (regionCode && regionCode !== 'ALL') videosUrl.searchParams.append("regionCode", regionCode);
     videosUrl.searchParams.append("key", apiKey);
     const videosRes = await fetch(videosUrl.toString());
     if (!videosRes.ok) continue;

@@ -10,7 +10,7 @@ import VideoAnalyticsModal from './components/VideoAnalyticsModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import LoginModal from './components/LoginModal';
 import CustomThumbnailEvaluator from './components/CustomThumbnailEvaluator';
-import { fetchAssignedApiKey, fetchAssignedAiKey, checkUsageLimit, incrementUsage, getUsageInfo } from './services/firebaseService';
+import { fetchAssignedApiKey, fetchAssignedAiKey, checkUsageLimit, incrementUsage, getUsageInfo, logUserSearch } from './services/firebaseService';
 import { authService } from './services/authService';
 
 const SEARCH_MODES = [
@@ -165,6 +165,11 @@ const App: React.FC = () => {
       if (userEmail) {
         await incrementUsage(userEmail);
         fetchUsageInfo();
+      }
+
+      // Bổ sung ghi nhận lịch sử tìm kiếm từ khóa với loại tìm kiếm (searchType)
+      if (inputTags.length > 0) {
+        logUserSearch(userEmail || 'guest', inputTags[0], searchMode).catch(e => console.error("Lỗi log search:", e));
       }
 
       if (searchMode === SearchMode.KEYWORDS) {
@@ -660,7 +665,7 @@ const App: React.FC = () => {
           <ApiKeyModal
             onClose={() => setIsKeyModalOpen(false)}
             currentYtKey={youtubeApiKey}
-            currentGeminiKey={geminiApiKey}
+            currentGeminiKeys={geminiApiKey}
             onSaveYtKey={setYoutubeApiKey}
             onSaveGeminiKey={setGeminiApiKey}
           />
