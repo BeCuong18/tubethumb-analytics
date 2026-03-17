@@ -2,7 +2,7 @@
 import React, { useState, FormEvent, useEffect, useMemo } from 'react';
 import { LoadingState, VideoData, SeoAnalysisResult, ThumbnailAnalysisResult, ChannelAnalysisResult, KeywordAnalysisResult, COUNTRIES, SearchMode, GEMINI_MODELS, SavedAnalysis, TIMEFRAMES, YOUTUBE_CATEGORIES, SingleVideoAnalysis, SortBy } from './types';
 import { analyzeSeoStrategy, analyzeThumbnailPatterns, analyzeChannelStrategy, analyzeKeywordSEO } from './services/geminiService';
-import { fetchYouTubeVideos, extractChannelIdentifier, extractVideoId, extractPlaylistId } from './services/youtubeService';
+import { fetchYouTubeVideos, extractChannelIdentifier, extractVideoId, extractPlaylistId, fetchChannelDetails } from './services/youtubeService';
 import { getSavedReports, getYoutubeApiKey, getGeminiApiKey, deleteReport } from './services/storageService';
 import ThumbnailCard from './components/ThumbnailCard';
 import TagInput from './components/TagInput';
@@ -10,6 +10,8 @@ import VideoAnalyticsModal from './components/VideoAnalyticsModal';
 import ApiKeyModal from './components/ApiKeyModal';
 import LoginModal from './components/LoginModal';
 import CustomThumbnailEvaluator from './components/CustomThumbnailEvaluator';
+import ChannelDashboard from './components/ChannelDashboard';
+import GoogleTrendsChart from './components/GoogleTrendsChart';
 import { fetchAssignedApiKey, fetchAssignedAiKey, checkUsageLimit, incrementUsage, getUsageInfo, logUserSearch } from './services/firebaseService';
 import { authService } from './services/authService';
 
@@ -19,8 +21,6 @@ const SEARCH_MODES = [
   { value: SearchMode.VIDEO_IDS, label: 'Video' },
   { value: SearchMode.PLAYLIST, label: 'Danh sách phát' },
 ];
-
-
 
 const App: React.FC = () => {
   const [youtubeApiKey, setYoutubeApiKey] = useState('');
@@ -42,6 +42,7 @@ const App: React.FC = () => {
   const [savedReports, setSavedReports] = useState<SavedAnalysis[]>([]);
   const [videoFilter, setVideoFilter] = useState<'ALL' | 'SHORTS' | 'UNDER_20' | 'OVER_20'>('ALL');
   const [sortBy, setSortBy] = useState<SortBy>(SortBy.VIEWS);
+  const [currentChannelDetails, setCurrentChannelDetails] = useState<any | null>(null);
 
   // User Auth State
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -143,10 +144,39 @@ const App: React.FC = () => {
     setErrorMsg(null);
     setVideos([]);
     setKeywordResult(null);
+    setCurrentChannelDetails(null);
     setSelectedTopic('Tất cả');
     setSelectedCountryKwd('Tất cả');
 
     try {
+      if (searchMode === SearchMode.CHANNELS && inputTags.length > 0) {
+        try {
+          const parsedId = extractChannelIdentifier(inputTags[0]);
+          let channelIdToFetch = parsedId.value;
+          if (parsedId.type !== 'ID') {
+             // Let the youtubeService resolve channel id via search, but we need it here for details.
+             // We do this concurrently so it doesn't block the video fetch too much.
+             const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
+             searchUrl.searchParams.append("part", "snippet");
+             searchUrl.searchParams.append("type", "channel");
+             searchUrl.searchParams.append("q", parsedId.value);
+             searchUrl.searchParams.append("maxResults", "1");
+             searchUrl.searchParams.append("key", youtubeApiKey);
+             const res = await fetch(searchUrl.toString());
+             const data = await res.json();
+             if (data.items && data.items.length > 0) {
+                 channelIdToFetch = data.items[0].id.channelId;
+             }
+          }
+          if (channelIdToFetch) {
+            const details = await fetchChannelDetails(youtubeApiKey, channelIdToFetch);
+            setCurrentChannelDetails(details);
+          }
+        } catch (e) {
+          console.error("Lỗi lấy thông tin rút gọn kênh:", e);
+        }
+      }
+
       const fetchedVideos = await fetchYouTubeVideos(
         youtubeApiKey,
         inputTags,
@@ -432,6 +462,13 @@ const App: React.FC = () => {
           </div>}
         </div>
 
+        {/* Cơn Sốt Google Trends - Chỉ hiển thị khi đang Tìm Từ Khóa và đã load xong videos */}
+        {searchMode === SearchMode.KEYWORDS && videos.length > 0 && inputTags.length > 0 && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <GoogleTrendsChart keyword={inputTags[0]} region={selectedRegion} timeframe={selectedTimeframe} />
+          </div>
+        )}
+
         {/* Dashboard Phân tích Từ khóa (Master) */}
         {searchMode === SearchMode.KEYWORDS && keywordResult && (
           <div className="max-w-7xl mx-auto mb-16 animate-fade-in">
@@ -600,6 +637,11 @@ const App: React.FC = () => {
               </div>
             )}
           </div>
+        )}
+
+        {/* Channel Dashboard Section (Shows when searchMode === CHANNELS and we have details) */}
+        {searchMode === SearchMode.CHANNELS && currentChannelDetails && videos.length > 0 && (
+          <ChannelDashboard channelDetails={currentChannelDetails} videos={videos} />
         )}
 
         {/* Video Results Section */}

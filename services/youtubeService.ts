@@ -65,6 +65,47 @@ const resolveChannelIds = async (apiKey: string, inputs: string[], regionCode?: 
   return resolvedIds;
 };
 
+export const fetchChannelDetails = async (apiKey: string, channelId: string): Promise<any> => {
+  if (!apiKey || !channelId) return null;
+  try {
+    const url = new URL("https://www.googleapis.com/youtube/v3/channels");
+    url.searchParams.append("part", "snippet,statistics,brandingSettings,topicDetails,status");
+    url.searchParams.append("id", channelId);
+    url.searchParams.append("key", apiKey);
+    
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.items || data.items.length === 0) return null;
+    
+    const item = data.items[0];
+    return {
+      id: item.id,
+      title: item.snippet.title,
+      description: item.snippet.description,
+      customUrl: item.snippet.customUrl,
+      publishedAt: item.snippet.publishedAt,
+      thumbnails: item.snippet.thumbnails,
+      defaultLanguage: item.snippet.defaultLanguage,
+      country: item.snippet.country,
+      viewCount: item.statistics.viewCount,
+      subscriberCount: item.statistics.subscriberCount,
+      hiddenSubscriberCount: item.statistics.hiddenSubscriberCount,
+      videoCount: item.statistics.videoCount,
+      bannerExternalUrl: item.brandingSettings?.image?.bannerExternalUrl,
+      keywords: item.brandingSettings?.channel?.keywords,
+      unsubscribedTrailer: item.brandingSettings?.channel?.unsubscribedTrailer,
+      topicCategories: item.topicDetails?.topicCategories,
+      madeForKids: item.status?.madeForKids,
+      privacyStatus: item.status?.privacyStatus,
+      isLinked: item.status?.isLinked
+    };
+  } catch (e) {
+    console.error("Lỗi khi tải thông tin chi tiết kênh:", e);
+    return null;
+  }
+};
+
 // Main function to fetch videos
 export const fetchYouTubeVideos = async (
   apiKey: string,

@@ -29,6 +29,20 @@ ipcMain.handle('reload-app', (event) => {
     }
 });
 
+// Import google-trends-api
+const googleTrends = require('google-trends-api');
+
+// Setup Google Trends handler
+ipcMain.handle('fetch-google-trends', async (event, options) => {
+    try {
+        const results = await googleTrends.interestOverTime(options);
+        return JSON.parse(results);
+    } catch (error) {
+        log.error("Google Trends API Error:", error);
+        throw error;
+    }
+});
+
 function createWindow() {
     const win = new BrowserWindow({
         width: 1280,
@@ -79,7 +93,7 @@ function createWindow() {
 
     // Load app based on environment
     if (process.env.NODE_ENV === 'development') {
-        win.loadURL('http://localhost:5174');
+        win.loadURL('http://127.0.0.1:5174');
         // Open DevTools in dev mode
         // win.webContents.openDevTools();
     } else {

@@ -1,16 +1,17 @@
 {
   "name": "tubethumb-analytics",
   "private": true,
-  "version": "1.1.5",
+  "version": "1.1.6",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
+    "clean": "node scripts/clean.js",
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run clean && vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on tcp:5174 && node scripts/start-electron.js\"",
-    "electron:build": "vite build && electron-builder",
-    "electron:publish": "vite build && electron-builder -p always"
+    "electron:build": "npm run clean && vite build && electron-builder",
+    "electron:publish": "npm run clean && vite build && electron-builder -p always"
   },
   "build": {
     "appId": "com.tubethumb.analytics",
@@ -26,6 +27,15 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!admin-app${/*}",
+      "!scripts${/*}",
+      "!tmp${/*}",
+      "!tmp_asar_extract${/*}"
+    ],
     "publish": [
       {
         "provider": "github",
@@ -35,21 +45,23 @@
     ]
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",
-    "firebase": "^12.9.0",
-    "keycloak-js": "^26.2.3",
+    "google-trends-api": "^4.9.2",
     "node-machine-id": "^1.1.12",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "recharts": "^3.8.0"
   },
   "devDependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.2.1",
     "electron": "^40.4.0",
     "electron-builder": "^26.7.0",
+    "firebase": "^12.9.0",
+    "keycloak-js": "^26.2.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "wait-on": "^9.0.4"

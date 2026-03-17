@@ -4,7 +4,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMachineId: () => ipcRenderer.invoke('get-machine-id'),
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
-    reloadApp: () => ipcRenderer.invoke('reload-app')
+    reloadApp: () => ipcRenderer.invoke('reload-app'),
+    fetchGoogleTrends: (options) => ipcRenderer.invoke('fetch-google-trends', options)
 });
 
 window.addEventListener('DOMContentLoaded', () => {

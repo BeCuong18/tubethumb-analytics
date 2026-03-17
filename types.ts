@@ -34,6 +34,32 @@ export interface VideoData {
   vph?: number;
 }
 
+export interface ChannelExtendedDetails {
+  id: string;
+  title: string;
+  description: string;
+  customUrl?: string;
+  publishedAt: string;
+  thumbnails: {
+    default?: { url: string };
+    medium?: { url: string };
+    high?: { url: string };
+  };
+  defaultLanguage?: string;
+  country?: string;
+  viewCount: string;
+  subscriberCount: string;
+  hiddenSubscriberCount: boolean;
+  videoCount: string;
+  bannerExternalUrl?: string;
+  keywords?: string;
+  unsubscribedTrailer?: string;
+  topicCategories?: string[];
+  madeForKids?: boolean;
+  privacyStatus?: string;
+  isLinked?: boolean;
+}
+
 export enum SortBy {
   VIEWS = 'VIEWS',
   DATE_DESC = 'DATE_DESC',
@@ -437,6 +463,7 @@ declare global {
       getAppVersion: () => Promise<string>;
       checkForUpdates: () => Promise<void>;
       reloadApp: () => Promise<void>;
+      fetchGoogleTrends: (options: any) => Promise<any>;
     };
   }
 }
