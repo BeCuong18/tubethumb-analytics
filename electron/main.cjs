@@ -1,6 +1,6 @@
 const { app, BrowserWindow, shell, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
-const { machineIdSync } = require('node-machine-id');
+const { execSync } = require('child_process');
 const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
 
@@ -10,7 +10,18 @@ autoUpdater.logger = log;
 
 // Register IPC handler for machine ID
 ipcMain.handle('get-machine-id', async () => {
-    return machineIdSync();
+    if (process.platform === 'win32') {
+        try {
+            const output = execSync('wmic csproduct get uuid').toString();
+            // Lọc ra chuỗi UUID thật sự, bỏ header "UUID" và khoảng trắng dư
+            const uuidLine = output.split('\n').find(line => line.trim().length > 0 && !line.trim().includes('UUID'));
+            return uuidLine ? uuidLine.trim() : 'UNKNOWN_UUID';
+        } catch (error) {
+            log.error('Failed to get machine UUID:', error);
+            return 'ERROR_GETTING_UUID';
+        }
+    }
+    return 'NON_WINDOWS_PLATFORM';
 });
 
 ipcMain.handle('get-app-version', () => {

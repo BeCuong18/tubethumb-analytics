@@ -23,6 +23,9 @@ export const authService = {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+            throw new Error('Invalid credentials');
+        }
         throw new Error(`Login failed: ${response.status}`);
       }
 
@@ -56,7 +59,8 @@ export const authService = {
     } catch (error: any) {
       console.error("Login API call failed:", error);
       removeStoredToken();
-      return { token: null, isLoggedIn: false };
+      // Ném lỗi ra ngoài thay vì chỉ return false, để Modal có thể hiển thị chính xác lỗi
+      throw error;
     }
   },
   

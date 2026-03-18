@@ -1,5 +1,21 @@
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
+const { execSync } = require('child_process');
+
+function getMachineUUID() {
+    if (process.platform === 'win32') {
+        try {
+            const output = execSync('wmic csproduct get uuid').toString();
+            const uuidLine = output.split('\n').find(line => line.trim().length > 0 && line.trim() !== 'UUID');
+            return uuidLine ? uuidLine.trim() : 'UNKNOWN_UUID';
+        } catch (error) {
+            console.error('Failed to get machine UUID:', error);
+            return 'ERROR_GETTING_UUID';
+        }
+    }
+    // Add logic for other platforms if needed, or return a placeholder
+    return 'NON_WINDOWS_PLATFORM';
+}
 
 function createWindow() {
     const win = new BrowserWindow({
@@ -31,6 +47,11 @@ function createWindow() {
     win.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url);
         return { action: 'deny' };
+    });
+
+    const { ipcMain } = require('electron');
+    ipcMain.handle('get-machine-id', () => {
+        return getMachineUUID();
     });
 }
 
