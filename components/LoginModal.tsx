@@ -22,6 +22,23 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
 
         setLoading(true);
         try {
+            // Xác thực mã máy tính gốc từ hệ điều hành với mã người dùng nhập
+            if (!window.electronAPI || !window.electronAPI.getMachineId) {
+                setError('Lỗi: Bạn đang chạy trên Web. Vui dùng phần mềm (App) để thử nghiệm tính năng khóa thiết bị này.');
+                setLoading(false);
+                return;
+            }
+
+            const realMachineId = await window.electronAPI.getMachineId();
+            const cleanComputerId = computerId.trim();
+            const cleanRealMachineId = realMachineId ? realMachineId.trim() : '';
+
+            if (cleanRealMachineId && cleanComputerId !== cleanRealMachineId) {
+                setError('ComputerID đăng nhập không trùng với cả mã thiết bị . Đăng nhập thất bại');
+                setLoading(false);
+                return;
+            }
+
             const result = await authService.login(username, password, computerId);
 
             if (result && result.isLoggedIn) {
@@ -33,8 +50,10 @@ const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
             console.error('Login API error', err);
             if (err.message === 'Device mismatch. This account is bound to another device.') {
                 setError('Thiết bị không khớp. Tài khoản này đã định danh trên một thiết bị khác.');
+            } else if (err.message === 'Invalid credentials') {
+                setError('Tài khoản hoặc mật khẩu không chính xác.');
             } else {
-                setError('Tài khoản, mật khẩu định danh không chính xác hoặc lỗi mạng.');
+                setError('Lỗi kết nối đến máy chủ. Điền sai tài khoản, mật khẩu hoặc lỗi mạng.');
             }
         } finally {
             setLoading(false);
